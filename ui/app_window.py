@@ -1,13 +1,14 @@
 """
-ARIA — A.R.I.A. JARVIS-Style Holographic Interface
-Iron Man / JARVIS faithful recreation with:
-- Hexagonal background grid
-- Animated arc reactor center ring (voice frequency visualizer)
-- Rotating outer scan rings
-- Holographic data panels (left / right / bottom)
-- Real-time CPU / RAM gauges
-- Blue layered glow pulses
-- Text telemetry streams
+ARIA — Enhanced JARVIS Holographic Interface v2
+Major visual upgrades:
+  - Radar sweep scanner line on outer ring
+  - Radiating pulse rings (heartbeat effect)
+  - Inner geometric hexagon / triangle inside reactor core
+  - Animated data stream ticker on side panels
+  - Sharper panel design with multi-line corner brackets
+  - Dashed separator rings between arcs
+  - Status-coloured glow bloom on core
+  - Improved typography & spacing
 """
 
 import tkinter as tk
@@ -34,262 +35,270 @@ try:
 except ImportError:
     EDGE_TTS_AVAILABLE = False
 
-# ── JARVIS Colour Palette ──────────────────────────────────────────────────────
-BG          = "#010409"     # Near-black background
-HEX_GRID    = "#03111E"     # Hex grid line colour
-PANEL_EDGE  = "#0A2840"     # Panel border
-CYAN_BRIGHT = "#00E5FF"     # Primary bright cyan
-CYAN_MID    = "#0099CC"     # Mid cyan
-CYAN_DIM    = "#004466"     # Dim structural cyan
-CYAN_GLOW   = "#002233"     # Ambient glow
-BLUE_RING   = "#0055AA"     # Outer ring blue
-BLUE_INNER  = "#003377"     # Inner ring
-GOLD        = "#FFB700"     # Stark gold accent
-GOLD_DIM    = "#664A00"
-TEXT_HI     = "#CCF0FF"     # Bright HUD text
-TEXT_MID    = "#5BA8C8"     # Secondary text
-TEXT_DIM    = "#1A4A64"     # Muted ambient text
-ALERT       = "#FF2244"     # Error/alert red
+# ── Colour palette ─────────────────────────────────────────────────────────────
+BG          = "#010509"
+PANEL_BG    = "#020B14"
+PANEL_EDGE  = "#0B2D45"
+CYAN_BRIGHT = "#00EEFF"
+CYAN_MID    = "#00AACC"
+CYAN_DIM    = "#005577"
+CYAN_GRID   = "#031420"
+BLUE_ARC    = "#1155BB"
+GOLD        = "#FFB800"
+GOLD_DIM    = "#5A4000"
+TEXT_HI     = "#D0F5FF"
+TEXT_MID    = "#4D9FBB"
+TEXT_DIM    = "#163850"
+ALERT       = "#FF2244"
+GREEN_LIT   = "#00FF88"
 
-# Status configs
+# ── State configs ──────────────────────────────────────────────────────────────
 STATE = {
     'idle': {
-        'bright': '#00C5E5', 'mid': '#006B8A', 'dim': '#001E2A',
-        'label': 'STANDBY', 'amp': 6, 'speed': 1.0,
-        'glow': '#001020', 'ring': '#001C30', 'status': 'AWAITING INPUT',
+        'bright': '#00CCEE', 'mid': '#006688', 'dim': '#001E2C',
+        'label': 'STANDBY', 'amp': 5, 'speed': 0.9,
+        'status': 'AWAITING COMMAND INPUT',
+        'core_fill': '#001018', 'sweep': '#003344',
     },
     'listening': {
-        'bright': '#00FF99', 'mid': '#00BB70', 'dim': '#003322',
-        'label': 'LISTENING', 'amp': 55, 'speed': 7.0,
-        'glow': '#002214', 'ring': '#003322', 'status': 'VOICE ACQUISITION ACTIVE',
+        'bright': '#00FF88', 'mid': '#00CC66', 'dim': '#003822',
+        'label': 'LISTENING', 'amp': 60, 'speed': 7.5,
+        'status': 'VOICE ACQUISITION · ACTIVE',
+        'core_fill': '#001A10', 'sweep': '#004422',
     },
     'thinking': {
-        'bright': '#FFB700', 'mid': '#BB8800', 'dim': '#442E00',
-        'label': 'PROCESSING', 'amp': 30, 'speed': 3.5,
-        'glow': '#1A1000', 'ring': '#221800', 'status': 'NEURAL SYNTHESIS IN PROGRESS',
+        'bright': '#FFB800', 'mid': '#CC8800', 'dim': '#3A2A00',
+        'label': 'PROCESSING', 'amp': 32, 'speed': 3.8,
+        'status': 'NEURAL SYNTHESIS · IN PROGRESS',
+        'core_fill': '#120C00', 'sweep': '#221800',
     },
     'speaking': {
-        'bright': '#00E5FF', 'mid': '#0088BB', 'dim': '#002A3A',
-        'label': 'TRANSMITTING', 'amp': 65, 'speed': 9.0,
-        'glow': '#001828', 'ring': '#002233', 'status': 'AUDIO OUTPUT ACTIVE',
+        'bright': '#00EEFF', 'mid': '#0099BB', 'dim': '#002A3A',
+        'label': 'TRANSMITTING', 'amp': 70, 'speed': 9.5,
+        'status': 'AUDIO MATRIX · OUTPUT ACTIVE',
+        'core_fill': '#001520', 'sweep': '#002838',
     },
     'error': {
-        'bright': '#FF2244', 'mid': '#AA1530', 'dim': '#330A12',
-        'label': 'FAULT', 'amp': 20, 'speed': 3.0,
-        'glow': '#200508', 'ring': '#2A0810', 'status': 'SYSTEM EXCEPTION DETECTED',
+        'bright': '#FF2244', 'mid': '#AA1530', 'dim': '#2A0810',
+        'label': 'FAULT', 'amp': 18, 'speed': 3.0,
+        'status': 'SYSTEM EXCEPTION · TELEMETRY FAULT',
+        'core_fill': '#110005', 'sweep': '#220510',
     },
 }
 
-NUM_BARS  = 128    # Arc reactor frequency bars
-FPS       = 40     # Animation frame rate
-HEX_SIZE  = 28     # Hexagonal grid cell size
+NUM_BARS = 120
+FPS      = 42
+HEX_R    = 30
 
 
 class AppWindow:
-    """
-    Full JARVIS holographic HUD for ARIA.
-    Faithful Iron Man aesthetic with hex grid, arc reactor visualizer,
-    scan rings, holographic panels, and live telemetry.
-    """
 
     def __init__(self, config, on_listen_request=None, on_api_key_save=None, on_reset_memory=None):
         self.config = config
-        self.on_listen_request = on_listen_request
-        self.on_api_key_save = on_api_key_save
-        self.on_reset_memory = on_reset_memory
+        self.on_listen_request  = on_listen_request
+        self.on_api_key_save    = on_api_key_save
+        self.on_reset_memory    = on_reset_memory
 
-        # Geometry
-        self._w = 900
+        # geometry
+        self._w = 920
         self._h = 680
         self._cx = self._w / 2
-        self._cy = self._h / 2 - 30
-        self._base_r = 140
+        self._cy = self._h * 0.43
+        self._base_r = 145
         self._fullscreen = False
 
-        # Animation
-        self._status = 'idle'
-        self._anim_running = True
-        self._rot1 = 0.0     # outer ring rotation
-        self._rot2 = 0.0     # inner ring (counter)
-        self._rot3 = 0.0     # dashed scan ring
-        self._phases = [random.uniform(0, 2 * math.pi) for _ in range(NUM_BARS)]
-        self._bar_vals = [0.0] * NUM_BARS
-        self._osc_t = 0.0
+        # animation state
+        self._status  = 'idle'
+        self._running = True
+        self._rot1    = 0.0   # outer arcs CW
+        self._rot2    = 0.0   # inner ring CCW
+        self._sweep   = 0.0   # radar sweep angle
+        self._pulse_r = []    # list of (radius, alpha) for pulse rings
+        self._bar_v   = [0.0] * NUM_BARS
+        self._phases  = [random.uniform(0, 2*math.pi) for _ in range(NUM_BARS)]
+        self._osc_t   = 0.0
+        self._ticker  = 0     # frame counter for telemetry update
 
-        # Hardware telemetry
-        self._cpu = 0
-        self._ram = 0
-        self._tel_tick = 0
+        # hardware
+        self._cpu = 0.0
+        self._ram = 0.0
 
-        # Dialogue
-        self._last_text = "ALL SYSTEMS NOMINAL — READY FOR INTERACTION"
-        self._last_source = "SYSTEM"
-        self._dialogue_scroll = []
+        # data stream (side panel scrolling hex numbers)
+        self._stream_l = [f"{random.randint(0,0xFFFF):04X}" for _ in range(20)]
+        self._stream_r = [f"{random.randint(0,0xFFFF):04X}" for _ in range(20)]
+        self._stream_tick = 0
 
-        # Root window
+        # dialogue
+        self._diag_text   = "ALL SYSTEMS NOMINAL — READY FOR INTERACTION"
+        self._diag_source = "SYSTEM"
+
+        # root window
         self.root = tk.Tk()
-        self.root.title("A.R.I.A. // STARK INDUSTRIES")
+        self.root.title("A.R.I.A.  ·  STARK INDUSTRIES")
         self.root.geometry(f"{self._w}x{self._h}")
-        self.root.minsize(700, 520)
+        self.root.minsize(720, 540)
         self.root.configure(bg=BG)
         self.root.attributes('-topmost', True)
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
-        self.root.bind("<F11>", lambda e: self._toggle_fullscreen())
+        self.root.bind("<F11>",  lambda e: self._toggle_fullscreen())
         self.root.bind("<Escape>", lambda e: self._exit_fullscreen())
 
         self._build_ui()
-        self._start_animation()
+        self._animate()
 
-    # ─────────────────────────────────────────────────────────────────────────
-    # UI Construction
-    # ─────────────────────────────────────────────────────────────────────────
+    # ── UI BUILD ────────────────────────────────────────────────────────────────
 
     def _build_ui(self):
-        # Top header bar
         self._build_header()
-        # Main canvas (takes all space)
         self._canvas = tk.Canvas(self.root, bg=BG, bd=0, highlightthickness=0)
         self._canvas.pack(fill='both', expand=True)
         self._canvas.bind("<Configure>", self._on_resize)
-        self._init_canvas_items()
-        # Bottom control bar
+        self._init_items()
         self._build_footer()
 
     def _build_header(self):
-        hdr = tk.Frame(self.root, bg=BG, height=44)
+        hdr = tk.Frame(self.root, bg=BG, height=46)
         hdr.pack(fill='x')
         hdr.pack_propagate(False)
 
-        # Left: branding
         lf = tk.Frame(hdr, bg=BG)
-        lf.pack(side='left', padx=14, fill='y')
-        tk.Label(lf, text="◈  STARK INDUSTRIES  ·  A.R.I.A. SYSTEM v4.2",
-                 bg=BG, fg=CYAN_BRIGHT, font=('Consolas', 10, 'bold')).pack(anchor='w', pady=(6, 0))
+        lf.pack(side='left', padx=16, fill='y')
+
+        tk.Label(lf, text="◈  STARK INDUSTRIES  ·  A.R.I.A. SYSTEM  v4.2",
+                 bg=BG, fg=CYAN_BRIGHT, font=('Consolas', 10, 'bold')).pack(anchor='w', pady=(8, 0))
         user = self.config.get('user_name', 'MADHAV').upper()
-        self._hdr_user = tk.Label(lf, text=f"OPERATOR: {user}  ·  NEURAL CORE: ONLINE",
-                                   bg=BG, fg=TEXT_DIM, font=('Consolas', 7))
+        self._hdr_user = tk.Label(
+            lf, text=f"OPERATOR : {user}   ·   NEURAL CORE : ONLINE   ·   WHISPER STT : ACTIVE",
+            bg=BG, fg=TEXT_DIM, font=('Consolas', 7)
+        )
         self._hdr_user.pack(anchor='w')
 
-        # Right: buttons
         rf = tk.Frame(hdr, bg=BG)
         rf.pack(side='right', padx=10, fill='y')
         for icon, cmd in [("⛶", self._toggle_fullscreen), ("⟳", self._reset_memory),
                            ("📌", self._toggle_topmost), ("⚙", self._open_settings)]:
-            tk.Button(rf, text=icon, command=cmd, bg='#020C18', fg=CYAN_MID,
-                      activebackground='#051830', activeforeground=CYAN_BRIGHT,
-                      relief='flat', bd=0, font=('Consolas', 11), width=3, cursor='hand2'
-                      ).pack(side='right', padx=2, pady=8)
+            tk.Button(rf, text=icon, command=cmd,
+                      bg='#020C18', fg=CYAN_MID,
+                      activebackground='#041C30', activeforeground=CYAN_BRIGHT,
+                      relief='flat', bd=0, font=('Consolas', 12), width=3, cursor='hand2'
+                      ).pack(side='right', padx=2, pady=10)
 
-        # Separator line
         tk.Frame(self.root, bg=PANEL_EDGE, height=1).pack(fill='x')
 
     def _build_footer(self):
-        foot = tk.Frame(self.root, bg='#020C18', height=50)
+        foot = tk.Frame(self.root, bg=PANEL_BG, height=52)
         foot.pack(fill='x', side='bottom')
         foot.pack_propagate(False)
-
         tk.Frame(foot, bg=PANEL_EDGE, height=1).pack(fill='x')
 
-        inner = tk.Frame(foot, bg='#020C18')
-        inner.pack(fill='both', expand=True, padx=16, pady=6)
+        row = tk.Frame(foot, bg=PANEL_BG)
+        row.pack(fill='both', expand=True, padx=16, pady=0)
 
         hk = self.config.get('hotkey', 'P').upper()
         self._activate_btn = tk.Button(
-            inner,
+            row,
             text=f"◉   ACTIVATE VOICE INTERFACE   [ {hk} ]",
             command=self._on_mic_click,
-            bg='#020C18', fg=CYAN_BRIGHT,
-            activebackground='#031828', activeforeground='#FFFFFF',
-            relief='flat', bd=0,
-            font=('Consolas', 11, 'bold'),
-            cursor='hand2'
+            bg=PANEL_BG, fg=CYAN_BRIGHT,
+            activebackground='#031C2C', activeforeground='#FFFFFF',
+            relief='flat', bd=0, font=('Consolas', 11, 'bold'), cursor='hand2'
         )
         self._activate_btn.pack(fill='both', expand=True)
 
-    # ─────────────────────────────────────────────────────────────────────────
-    # Canvas Items
-    # ─────────────────────────────────────────────────────────────────────────
+    # ── CANVAS ITEMS ────────────────────────────────────────────────────────────
 
-    def _init_canvas_items(self):
+    def _init_items(self):
         c = self._canvas
 
-        # ── Layer 0: Hex grid (many polygons) ────────────────────────────────
-        # We draw hex grid dynamically in the animation loop using a tag
-        # to avoid pre-allocating hundreds of static items here.
+        # ── Scan rings (static circles) ───────────────────────────────────────
+        self._r_outer3 = c.create_oval(0,0,1,1, outline='#001525', width=1)
+        self._r_outer2 = c.create_oval(0,0,1,1, outline='#001E33', width=1)
+        self._r_outer1 = c.create_oval(0,0,1,1, outline='#002840', width=1)
+        self._r_mid    = c.create_oval(0,0,1,1, outline=PANEL_EDGE,  width=1)
+        self._r_core   = c.create_oval(0,0,1,1, outline=CYAN_DIM,    width=1)
 
-        # ── Layer 1: Scan rings (concentric circles) ─────────────────────────
-        self._ring_d1 = c.create_oval(0,0,1,1, outline='#001C30', width=1)   # outermost dim
-        self._ring_d2 = c.create_oval(0,0,1,1, outline='#002844', width=1)
-        self._ring_d3 = c.create_oval(0,0,1,1, outline='#003355', width=1)
+        # Degree marks around outer ring
+        self._deg_marks = [c.create_text(0,0, text="000°", fill=TEXT_DIM, font=('Consolas',6,'bold')) for _ in range(12)]
 
-        # Degree marks on outer ring
-        self._deg_marks = [c.create_text(0,0, text=f"{i*30:03d}°", fill=TEXT_DIM, font=('Consolas',6)) for i in range(12)]
+        # ── Rotating arcs ─────────────────────────────────────────────────────
+        self._arcs_outer = [c.create_arc(0,0,1,1, start=0, extent=18, outline=CYAN_DIM,  style='arc', width=2) for _ in range(8)]
+        self._arcs_inner = [c.create_arc(0,0,1,1, start=0, extent=6,  outline=BLUE_ARC, style='arc', width=1) for _ in range(16)]
 
-        # ── Layer 2: Rotating arc segments (outer scanner) ───────────────────
-        self._outer_arcs = [c.create_arc(0,0,1,1, start=0, extent=20, outline=CYAN_DIM, style='arc', width=2) for _ in range(6)]
-        # Inner counter-rotating dashes
-        self._inner_arcs = [c.create_arc(0,0,1,1, start=0, extent=8, outline=BLUE_RING, style='arc', width=1) for _ in range(12)]
+        # ── Radar sweep ───────────────────────────────────────────────────────
+        self._sweep_line = c.create_line(0,0,1,1, fill=GREEN_LIT, width=2)
+        self._sweep_fade = [c.create_arc(0,0,1,1, start=0, extent=1, outline='#002010', style='arc', width=2) for _ in range(18)]
 
-        # ── Layer 3: Frequency bars (arc reactor) ────────────────────────────
+        # ── Pulse rings (radiating outward) ───────────────────────────────────
+        self._pulse_rings = [c.create_oval(0,0,1,1, outline='#001520', width=1) for _ in range(4)]
+        self._pulse_radii = [0.0, 0.25, 0.5, 0.75]   # phase offsets
+
+        # ── Frequency bars ────────────────────────────────────────────────────
         self._freq_bars = [c.create_line(0,0,1,1, fill=CYAN_DIM, width=2, capstyle='round') for _ in range(NUM_BARS)]
 
-        # ── Layer 4: Core circles ─────────────────────────────────────────────
-        self._core_outer_mask = c.create_oval(0,0,1,1, fill=BG, outline='#003050', width=2)
-        self._core_glow3 = c.create_oval(0,0,1,1, fill='#000D15', outline='#001825', width=1)
-        self._core_glow2 = c.create_oval(0,0,1,1, fill='#001520', outline='#002840', width=1)
-        self._core_glow1 = c.create_oval(0,0,1,1, fill='#001C2C', outline='#003C5A', width=2)
-        self._core_gold  = c.create_oval(0,0,1,1, outline=GOLD_DIM, width=1)
-        self._core_ring  = c.create_oval(0,0,1,1, outline=CYAN_DIM, width=2)
+        # ── Core mask & glow layers ───────────────────────────────────────────
+        self._core_mask   = c.create_oval(0,0,1,1, fill=BG,     outline=PANEL_EDGE, width=2)
+        self._core_glow3  = c.create_oval(0,0,1,1, fill='#000C14', outline='#001524', width=1)
+        self._core_glow2  = c.create_oval(0,0,1,1, fill='#001018', outline='#002030', width=1)
+        self._core_glow1  = c.create_oval(0,0,1,1, fill='#001520', outline='#00304A', width=2)
 
-        # ── Layer 5: Center text ──────────────────────────────────────────────
-        self._txt_name   = c.create_text(0,0, text="A.R.I.A.", fill=CYAN_BRIGHT, font=('Consolas', 20, 'bold'))
-        self._txt_status = c.create_text(0,0, text="STANDBY", fill=CYAN_MID, font=('Consolas', 9, 'bold'))
-        self._txt_sub    = c.create_text(0,0, text="AWAITING INPUT", fill=TEXT_DIM, font=('Consolas', 7))
+        # Hexagon inside core
+        self._core_hex    = [c.create_line(0,0,1,1, fill=CYAN_DIM, width=1) for _ in range(6)]
+        # Triangle inside core
+        self._core_tri    = [c.create_line(0,0,1,1, fill=GOLD_DIM, width=1) for _ in range(3)]
+        # Inner dot
+        self._core_dot    = c.create_oval(0,0,1,1, fill=CYAN_DIM, outline='')
 
-        # ── Layer 6: Left panel — System telemetry ───────────────────────────
-        self._lp_title  = c.create_text(0,0, text="◈ SYSTEM TELEMETRY", fill=CYAN_MID, font=('Consolas',8,'bold'), anchor='w')
-        self._lp_cpu_l  = c.create_text(0,0, text="CPU  :", fill=TEXT_MID, font=('Consolas',8), anchor='w')
-        self._lp_cpu_v  = c.create_text(0,0, text="0%", fill=CYAN_BRIGHT, font=('Consolas',8,'bold'), anchor='w')
-        self._lp_ram_l  = c.create_text(0,0, text="RAM  :", fill=TEXT_MID, font=('Consolas',8), anchor='w')
-        self._lp_ram_v  = c.create_text(0,0, text="0%", fill=CYAN_MID, font=('Consolas',8,'bold'), anchor='w')
-        self._lp_cpu_bg = c.create_rectangle(0,0,1,1, fill='#001828', outline='#002840', width=1)
+        # Gold accent ring & cyan ring
+        self._core_gold   = c.create_oval(0,0,1,1, outline=GOLD_DIM, width=1)
+        self._core_ring2  = c.create_oval(0,0,1,1, outline=CYAN_DIM, width=2)
+
+        # ── Center text ───────────────────────────────────────────────────────
+        self._txt_aria    = c.create_text(0,0, text="A·R·I·A", fill=CYAN_BRIGHT, font=('Consolas',22,'bold'))
+        self._txt_label   = c.create_text(0,0, text="STANDBY", fill=CYAN_MID,    font=('Consolas',8,'bold'))
+        self._txt_status  = c.create_text(0,0, text="AWAITING COMMAND INPUT", fill=TEXT_DIM, font=('Consolas',7))
+
+        # ── LEFT PANEL ────────────────────────────────────────────────────────
+        # Borders (4 sides)
+        self._lp_b = [c.create_line(0,0,1,1, fill=PANEL_EDGE, width=1) for _ in range(4)]
+        # Corner accents (extra ticks at corners)
+        self._lp_c = [c.create_line(0,0,1,1, fill=CYAN_DIM, width=2) for _ in range(8)]
+
+        self._lp_title = c.create_text(0,0, text="◈ SYSTEM TELEMETRY", fill=CYAN_MID, font=('Consolas',8,'bold'), anchor='w')
+        self._lp_cpu_l = c.create_text(0,0, text="CPU :", fill=TEXT_MID, font=('Consolas',8), anchor='w')
+        self._lp_cpu_v = c.create_text(0,0, text="0%",   fill=CYAN_BRIGHT, font=('Consolas',8,'bold'), anchor='w')
+        self._lp_ram_l = c.create_text(0,0, text="RAM :", fill=TEXT_MID, font=('Consolas',8), anchor='w')
+        self._lp_ram_v = c.create_text(0,0, text="0%",   fill=CYAN_MID, font=('Consolas',8,'bold'), anchor='w')
+        self._lp_cpu_bg = c.create_rectangle(0,0,1,1, fill='#001520', outline=PANEL_EDGE)
         self._lp_cpu_fg = c.create_rectangle(0,0,1,1, fill=CYAN_BRIGHT, outline='')
-        self._lp_ram_bg = c.create_rectangle(0,0,1,1, fill='#001828', outline='#002840', width=1)
+        self._lp_ram_bg = c.create_rectangle(0,0,1,1, fill='#001520', outline=PANEL_EDGE)
         self._lp_ram_fg = c.create_rectangle(0,0,1,1, fill=CYAN_MID, outline='')
-        self._lp_audio  = c.create_text(0,0, text="AUDIO  : 48kHz", fill=TEXT_DIM, font=('Consolas',7), anchor='w')
-        self._lp_link   = c.create_text(0,0, text="NEURAL : ONLINE", fill=TEXT_DIM, font=('Consolas',7), anchor='w')
-        self._lp_time   = c.create_text(0,0, text="--:--:--", fill=TEXT_DIM, font=('Consolas',7), anchor='w')
+        self._lp_extra  = [c.create_text(0,0, text="", fill=TEXT_DIM, font=('Consolas',7), anchor='w') for _ in range(6)]
+        # Data stream
+        self._lp_stream = [c.create_text(0,0, text="----", fill=TEXT_DIM, font=('Courier',7), anchor='w') for _ in range(8)]
 
-        # Panel border lines
-        self._lp_border = [c.create_line(0,0,1,1, fill=PANEL_EDGE, width=1) for _ in range(4)]
+        # ── RIGHT PANEL ───────────────────────────────────────────────────────
+        self._rp_b = [c.create_line(0,0,1,1, fill=PANEL_EDGE, width=1) for _ in range(4)]
+        self._rp_c = [c.create_line(0,0,1,1, fill=CYAN_DIM, width=2) for _ in range(8)]
 
-        # ── Layer 7: Right panel — Neural diagnostics ────────────────────────
         self._rp_title  = c.create_text(0,0, text="NEURAL DIAGNOSTICS ◈", fill=CYAN_MID, font=('Consolas',8,'bold'), anchor='e')
-        self._rp_model  = c.create_text(0,0, text="MODEL  : GEMINI-2.0-FLASH", fill=TEXT_MID, font=('Consolas',7), anchor='e')
-        self._rp_voice  = c.create_text(0,0, text="VOICE  : RYAN NEURAL", fill=TEXT_MID, font=('Consolas',7), anchor='e')
-        self._rp_stt    = c.create_text(0,0, text="STT    : WHISPER / LOCAL", fill=TEXT_MID, font=('Consolas',7), anchor='e')
-        self._rp_lat    = c.create_text(0,0, text="LATENCY: <100ms", fill=TEXT_DIM, font=('Consolas',7), anchor='e')
-        self._rp_sec    = c.create_text(0,0, text="SECURE : ACTIVE", fill=TEXT_DIM, font=('Consolas',7), anchor='e')
-        self._rp_border = [c.create_line(0,0,1,1, fill=PANEL_EDGE, width=1) for _ in range(4)]
+        self._rp_lines  = [c.create_text(0,0, text="", fill=TEXT_MID, font=('Consolas',7), anchor='e') for _ in range(6)]
+        self._rp_stream = [c.create_text(0,0, text="----", fill=TEXT_DIM, font=('Courier',7), anchor='e') for _ in range(8)]
 
-        # ── Layer 8: Bottom dialogue panel ───────────────────────────────────
-        self._dp_bg     = c.create_rectangle(0,0,1,1, fill='#020B18', outline=PANEL_EDGE, width=1)
-        self._dp_src    = c.create_text(0,0, text="● SYSTEM", fill=CYAN_MID, font=('Consolas',8,'bold'), anchor='w')
-        self._dp_time   = c.create_text(0,0, text="--:--:--", fill=TEXT_DIM, font=('Consolas',7), anchor='e')
-        self._dp_text   = c.create_text(0,0, text="ALL SYSTEMS NOMINAL — READY FOR INTERACTION",
-                                        fill=TEXT_HI, font=('Consolas', 9), anchor='w', width=600)
-        self._dp_divider = c.create_line(0,0,1,1, fill=PANEL_EDGE, width=1)
+        # ── BOTTOM DIALOGUE PANEL ─────────────────────────────────────────────
+        self._dp_bg   = c.create_rectangle(0,0,1,1, fill=PANEL_BG, outline=PANEL_EDGE, width=1)
+        self._dp_div  = c.create_line(0,0,1,1, fill=PANEL_EDGE, width=1)
+        self._dp_src  = c.create_text(0,0, text="● SYSTEM", fill=TEXT_MID, font=('Consolas',8,'bold'), anchor='w')
+        self._dp_clk  = c.create_text(0,0, text="--:--:--", fill=TEXT_DIM, font=('Consolas',7), anchor='e')
+        self._dp_txt  = c.create_text(0,0, text=self._diag_text, fill=TEXT_HI, font=('Consolas',9), anchor='w', width=600)
 
-        # Corner brackets
-        self._corners = [c.create_line(0,0,1,1, fill=CYAN_DIM, width=1) for _ in range(8)]
+        # ── Corner brackets (4 corners, 2 lines each) ─────────────────────────
+        self._corners = [c.create_line(0,0,1,1, fill=CYAN_DIM, width=2) for _ in range(8)]
 
-        # Oscilloscope bottom
-        self._osc1 = c.create_line([0,0,1,1], fill=CYAN_DIM, width=1, smooth=True)
-        self._osc2 = c.create_line([0,0,1,1], fill='#001828', width=1, smooth=True)
+        # ── Oscilloscope ─────────────────────────────────────────────────────
+        self._osc1 = c.create_line([0,0,1,1], fill='#002A3A', width=1, smooth=True)
+        self._osc2 = c.create_line([0,0,1,1], fill='#001A28', width=1, smooth=True)
 
-    # ─────────────────────────────────────────────────────────────────────────
-    # Resize Handler
-    # ─────────────────────────────────────────────────────────────────────────
+    # ── RESIZE ──────────────────────────────────────────────────────────────────
 
     def _on_resize(self, event):
         if event.width < 50 or event.height < 50:
@@ -297,332 +306,408 @@ class AppWindow:
         self._w = event.width
         self._h = event.height
         self._cx = self._w / 2
-        # Center is slightly above middle to leave room for dialogue panel
         self._cy = self._h * 0.44
-        self._base_r = max(90, min(self._w * 0.20, self._h * 0.28))
+        self._base_r = max(95, min(self._w * 0.21, self._h * 0.30))
+        self._canvas.itemconfig(self._dp_txt, width=max(300, self._w - 80))
+        self._update_corners()
 
-        # Update dialogue text wrap
-        self._canvas.itemconfig(self._dp_text, width=max(300, self._w - 80))
-
-        # Corner brackets
-        s = 20
-        coords = [
-            (8, 8, 8+s, 8), (8, 8, 8, 8+s),
-            (self._w-8, 8, self._w-8-s, 8), (self._w-8, 8, self._w-8, 8+s),
-            (8, self._h-8, 8+s, self._h-8), (8, self._h-8, 8, self._h-8-s),
-            (self._w-8, self._h-8, self._w-8-s, self._h-8), (self._w-8, self._h-8, self._w-8, self._h-8-s),
+    def _update_corners(self):
+        s, w, h = 22, self._w, self._h
+        pts = [
+            (8,8, 8+s,8), (8,8, 8,8+s),
+            (w-8,8, w-8-s,8), (w-8,8, w-8,8+s),
+            (8,h-8, 8+s,h-8), (8,h-8, 8,h-8-s),
+            (w-8,h-8, w-8-s,h-8), (w-8,h-8, w-8,h-8-s),
         ]
-        for i, (x1, y1, x2, y2) in enumerate(coords):
-            self._canvas.coords(self._corners[i], x1, y1, x2, y2)
+        for i, (x1,y1,x2,y2) in enumerate(pts):
+            self._canvas.coords(self._corners[i], x1,y1,x2,y2)
 
-    # ─────────────────────────────────────────────────────────────────────────
-    # Main Animation Loop
-    # ─────────────────────────────────────────────────────────────────────────
-
-    def _start_animation(self):
-        self._animate()
+    # ── ANIMATION ───────────────────────────────────────────────────────────────
 
     def _animate(self):
-        if not self._anim_running:
+        if not self._running:
             return
 
-        t = time.time()
-        s = STATE[self._status]
-        amp   = s['amp']
-        speed = s['speed']
+        t  = time.time()
+        s  = STATE[self._status]
+        cx, cy, r = self._cx, self._cy, self._base_r
+        c  = self._canvas
         bright = s['bright']
         mid    = s['mid']
         dim    = s['dim']
+        amp    = s['amp']
+        spd    = s['speed']
 
-        cx, cy, r = self._cx, self._cy, self._base_r
-        c = self._canvas
-
-        # ── Draw hex grid ─────────────────────────────────────────────────────
+        # ── Hex grid ──────────────────────────────────────────────────────────
         self._draw_hex_grid(cx, cy, r)
 
-        # ── Frequency bars ────────────────────────────────────────────────────
-        bar_inner_r = r * 0.95
-        bar_outer_r = r * 0.95
-        for i in range(NUM_BARS):
-            angle = (2 * math.pi * i / NUM_BARS) - math.pi / 2
-            target = amp * (0.35 + 0.65 * abs(math.sin(t * speed * 0.7 + self._phases[i])))
-            self._bar_vals[i] += (target - self._bar_vals[i]) * 0.22
-            h = self._bar_vals[i]
-            inner_r = bar_inner_r
-            outer_r = bar_outer_r + h
+        # ── Pulse rings ───────────────────────────────────────────────────────
+        pulse_speed = spd * 0.06
+        for i, pr in enumerate(self._pulse_rings):
+            self._pulse_radii[i] = (self._pulse_radii[i] + pulse_speed) % 1.0
+            fr = self._pulse_radii[i]
+            pr_radius = r * (1.0 + fr * 0.8)
+            fade_col = self._lerp_colour(mid, BG, fr)
+            c.coords(pr, cx-pr_radius, cy-pr_radius, cx+pr_radius, cy+pr_radius)
+            c.itemconfig(pr, outline=fade_col)
 
-            x1 = cx + inner_r * math.cos(angle)
-            y1 = cy + inner_r * math.sin(angle)
-            x2 = cx + outer_r * math.cos(angle)
-            y2 = cy + outer_r * math.sin(angle)
+        # ── Static rings ──────────────────────────────────────────────────────
+        def oval(item, rad, **kw):
+            c.coords(item, cx-rad, cy-rad, cx+rad, cy+rad)
+            if kw: c.itemconfig(item, **kw)
 
-            intensity = h / max(amp, 1)
-            if intensity > 0.75:
-                col = bright
-            elif intensity > 0.4:
-                col = mid
-            else:
-                col = dim
-            c.coords(self._freq_bars[i], x1, y1, x2, y2)
-            c.itemconfig(self._freq_bars[i], fill=col)
+        oval(self._r_outer3, r * 1.60)
+        oval(self._r_outer2, r * 1.45)
+        oval(self._r_outer1, r * 1.30)
+        oval(self._r_mid,    r * 1.15)
+        oval(self._r_core,   r * 1.00)
 
-        # ── Rotation ──────────────────────────────────────────────────────────
-        self._rot1 += 0.008 * speed
-        self._rot2 -= 0.005 * speed
-        self._rot3 += 0.012 * speed
-
-        # Outer arcs (6 evenly spaced, rotating)
-        arc_r = r * 1.32
-        for i, aid in enumerate(self._outer_arcs):
-            base_angle = (360 / 6) * i + math.degrees(self._rot1)
-            c.coords(aid, cx - arc_r, cy - arc_r, cx + arc_r, cy + arc_r)
-            c.itemconfig(aid, start=base_angle, extent=22, outline=mid)
-
-        # Inner counter-rotating short dashes
-        inner_arc_r = r * 1.18
-        for i, aid in enumerate(self._inner_arcs):
-            base_angle = (360 / 12) * i + math.degrees(self._rot2)
-            c.coords(aid, cx - inner_arc_r, cy - inner_arc_r, cx + inner_arc_r, cy + inner_arc_r)
-            c.itemconfig(aid, start=base_angle, extent=5, outline=BLUE_RING)
-
-        # ── Concentric static rings ───────────────────────────────────────────
-        def oval(ox, oy, rad, item, **kw):
-            c.coords(item, ox - rad, oy - rad, ox + rad, oy + rad)
-            if kw:
-                c.itemconfig(item, **kw)
-
-        oval(cx, cy, r * 1.45, self._ring_d1)
-        oval(cx, cy, r * 1.32, self._ring_d2)
-        oval(cx, cy, r * 1.18, self._ring_d3)
-
-        # Degree marks on outer ring
-        deg_r = r * 1.52
+        # ── Degree marks ──────────────────────────────────────────────────────
+        dr = r * 1.68
         for i, dm in enumerate(self._deg_marks):
-            ang = (2 * math.pi * i / 12) - math.pi / 2
-            dx = cx + deg_r * math.cos(ang)
-            dy = cy + deg_r * math.sin(ang)
-            c.coords(dm, dx, dy)
+            a = (2*math.pi*i/12) - math.pi/2
+            c.coords(dm, cx + dr*math.cos(a), cy + dr*math.sin(a))
             c.itemconfig(dm, text=f"{i*30:03d}°")
 
-        # ── Core circles ──────────────────────────────────────────────────────
-        core_mask_r = r * 0.68
-        oval(cx, cy, core_mask_r, self._core_outer_mask)
-        oval(cx, cy, core_mask_r * 0.90, self._core_glow3)
-        oval(cx, cy, core_mask_r * 0.76, self._core_glow2)
-        oval(cx, cy, core_mask_r * 0.60, self._core_glow1)
+        # ── Rotating outer arcs ───────────────────────────────────────────────
+        self._rot1 += 0.007 * spd
+        ar = r * 1.44
+        for i, a in enumerate(self._arcs_outer):
+            base = math.degrees(self._rot1) + (360/8)*i
+            c.coords(a, cx-ar, cy-ar, cx+ar, cy+ar)
+            c.itemconfig(a, start=base, extent=20, outline=mid)
 
-        pulse = 0.5 + 0.5 * math.sin(t * speed * 0.4)
-        gold_r = core_mask_r * (0.30 + 0.04 * pulse)
-        oval(cx, cy, gold_r, self._core_gold)
-        oval(cx, cy, core_mask_r * 0.52, self._core_ring, outline=bright if self._status != 'idle' else CYAN_DIM)
+        # Inner counter-rotating
+        self._rot2 -= 0.009 * spd
+        ir = r * 1.14
+        for i, a in enumerate(self._arcs_inner):
+            base = math.degrees(self._rot2) + (360/16)*i
+            c.coords(a, cx-ir, cy-ir, cx+ir, cy+ir)
+            c.itemconfig(a, start=base, extent=5, outline=BLUE_ARC)
+
+        # ── Radar sweep ───────────────────────────────────────────────────────
+        self._sweep = (self._sweep + 0.04 * spd) % (2*math.pi)
+        sweep_r = r * 1.29
+        sx = cx + sweep_r * math.cos(self._sweep)
+        sy = cy + sweep_r * math.sin(self._sweep)
+        c.coords(self._sweep_line, cx, cy, sx, sy)
+        c.itemconfig(self._sweep_line, fill=bright if self._status != 'idle' else CYAN_DIM)
+
+        # Sweep fade trail (ghost arcs behind sweep)
+        trail_r = r * 1.28
+        for i, fa in enumerate(self._sweep_fade):
+            offset = -(i+1) * 5
+            fade = max(0, 1.0 - i/len(self._sweep_fade))
+            fade_c = self._lerp_colour(mid, BG, 1.0 - fade * 0.6)
+            c.coords(fa, cx-trail_r, cy-trail_r, cx+trail_r, cy+trail_r)
+            c.itemconfig(fa, start=math.degrees(self._sweep)+offset, extent=5, outline=fade_c)
+
+        # ── Frequency bars ────────────────────────────────────────────────────
+        for i, bar in enumerate(self._freq_bars):
+            ang = (2*math.pi*i/NUM_BARS) - math.pi/2
+            target = amp * (0.3 + 0.7 * abs(math.sin(t*spd*0.65 + self._phases[i])))
+            self._bar_v[i] += (target - self._bar_v[i]) * 0.20
+            h = self._bar_v[i]
+            x1 = cx + r * math.cos(ang)
+            y1 = cy + r * math.sin(ang)
+            x2 = cx + (r + h) * math.cos(ang)
+            y2 = cy + (r + h) * math.sin(ang)
+            intensity = h / max(amp, 1)
+            col = bright if intensity > 0.72 else mid if intensity > 0.38 else dim
+            c.coords(bar, x1,y1, x2,y2)
+            c.itemconfig(bar, fill=col)
+
+        # ── Core layers ───────────────────────────────────────────────────────
+        cmr = r * 0.70
+        oval(self._core_mask,  cmr,  fill=BG, outline=mid)
+        oval(self._core_glow3, cmr * 0.93, fill=s['core_fill'])
+        oval(self._core_glow2, cmr * 0.78, fill=self._shift_colour(s['core_fill'], 8))
+        oval(self._core_glow1, cmr * 0.61, fill=self._shift_colour(s['core_fill'], 16))
+
+        # ── Inner hex ─────────────────────────────────────────────────────────
+        hex_r = cmr * 0.42
+        for i, hl in enumerate(self._core_hex):
+            a1 = (2*math.pi*i/6)     + self._rot1 * 0.3
+            a2 = (2*math.pi*(i+1)/6) + self._rot1 * 0.3
+            c.coords(hl,
+                     cx + hex_r*math.cos(a1), cy + hex_r*math.sin(a1),
+                     cx + hex_r*math.cos(a2), cy + hex_r*math.sin(a2))
+            c.itemconfig(hl, fill=mid if self._status != 'idle' else CYAN_DIM)
+
+        # ── Inner triangle ────────────────────────────────────────────────────
+        tri_r = cmr * 0.28
+        for i, tl in enumerate(self._core_tri):
+            a1 = (2*math.pi*i/3)     - self._rot2 * 0.4
+            a2 = (2*math.pi*(i+1)/3) - self._rot2 * 0.4
+            c.coords(tl,
+                     cx + tri_r*math.cos(a1), cy + tri_r*math.sin(a1),
+                     cx + tri_r*math.cos(a2), cy + tri_r*math.sin(a2))
+            c.itemconfig(tl, fill=GOLD_DIM if self._status == 'idle' else GOLD)
+
+        # Core dot
+        pulse = 0.5 + 0.5 * math.sin(t * spd * 0.6)
+        dot_r = cmr * (0.08 + 0.04 * pulse)
+        c.coords(self._core_dot, cx-dot_r, cy-dot_r, cx+dot_r, cy+dot_r)
+        c.itemconfig(self._core_dot, fill=bright)
+
+        oval(self._core_gold,  cmr * 0.52, outline=GOLD_DIM)
+        oval(self._core_ring2, cmr * 0.60, outline=bright if self._status != 'idle' else CYAN_DIM)
 
         # ── Center text ───────────────────────────────────────────────────────
-        name_font_size = max(14, int(r * 0.14))
-        c.coords(self._txt_name, cx, cy - r * 0.08)
-        c.itemconfig(self._txt_name, font=('Consolas', name_font_size, 'bold'), fill=bright)
-        c.coords(self._txt_status, cx, cy + r * 0.10)
-        c.itemconfig(self._txt_status, text=s['label'])
-        c.coords(self._txt_sub, cx, cy + r * 0.20)
-        c.itemconfig(self._txt_sub, text=s['status'])
+        fsize = max(14, int(r * 0.145))
+        c.coords(self._txt_aria,   cx, cy - r * 0.06)
+        c.itemconfig(self._txt_aria, font=('Consolas', fsize, 'bold'), fill=bright)
+        c.coords(self._txt_label,  cx, cy + r * 0.11)
+        c.itemconfig(self._txt_label, text=s['label'], fill=mid)
+        c.coords(self._txt_status, cx, cy + r * 0.22)
+        c.itemconfig(self._txt_status, text=s['status'], fill=TEXT_DIM)
 
         # ── Left panel ────────────────────────────────────────────────────────
-        self._draw_left_panel(cx, cy, r, t)
+        self._draw_left_panel(cx, cy, r)
 
         # ── Right panel ───────────────────────────────────────────────────────
         self._draw_right_panel(cx, cy, r)
 
-        # ── Bottom dialogue panel ─────────────────────────────────────────────
-        self._draw_dialogue_panel()
+        # ── Bottom dialogue ───────────────────────────────────────────────────
+        self._draw_dialogue(t)
 
         # ── Oscilloscope ──────────────────────────────────────────────────────
-        self._draw_oscilloscope(t)
+        self._draw_osc(t, spd, mid, dim)
 
-        # ── Telemetry update (every 60 frames) ───────────────────────────────
-        self._tel_tick += 1
-        if self._tel_tick >= 60 and PSUTIL_AVAILABLE:
-            self._tel_tick = 0
-            self._cpu = psutil.cpu_percent(interval=None)
-            self._ram = psutil.virtual_memory().percent
+        # ── Clock & telemetry ─────────────────────────────────────────────────
+        self._ticker += 1
+        if self._ticker % 55 == 0:
+            if PSUTIL_AVAILABLE:
+                self._cpu = psutil.cpu_percent(interval=None)
+                self._ram = psutil.virtual_memory().percent
+        if self._ticker % 12 == 0:
+            # Scroll data streams
+            self._stream_l.pop()
+            self._stream_l.insert(0, f"{random.randint(0,0xFFFFFF):06X}")
+            self._stream_r.pop()
+            self._stream_r.insert(0, f"{random.randint(0,0xFFFF):04X}")
 
-        # ── Clock update ──────────────────────────────────────────────────────
         now = datetime.now().strftime("%H:%M:%S")
-        c.itemconfig(self._lp_time, text=f"TIME   : {now}")
-        c.itemconfig(self._dp_time, text=now)
+        c.itemconfig(self._dp_clk, text=now)
 
-        # Schedule next frame
         self.root.after(1000 // FPS, self._animate)
 
+    # ── DRAW HELPERS ─────────────────────────────────────────────────────────
+
     def _draw_hex_grid(self, cx, cy, r):
-        """Draw a subtle hexagonal grid in the background (static, redrawn each frame for glow)."""
         c = self._canvas
         c.delete("hexgrid")
-        # Only draw hexes within canvas bounds
-        w, h = self._w, self._h
-        hs = HEX_SIZE
-        rows = int(h / (hs * 1.5)) + 2
-        cols = int(w / (hs * math.sqrt(3))) + 2
-        hex_w = hs * math.sqrt(3)
-
+        hw = HEX_R * math.sqrt(3)
+        rows = int(self._h / (HEX_R * 1.5)) + 3
+        cols = int(self._w / hw) + 3
         for row in range(-1, rows):
             for col in range(-1, cols):
-                hx = col * hex_w + (hex_w / 2 if row % 2 else 0)
-                hy = row * hs * 1.5
-
-                # Distance from center — fade outer hexes
+                hx = col * hw + (hw/2 if row % 2 else 0)
+                hy = row * HEX_R * 1.5
                 dist = math.hypot(hx - cx, hy - cy)
-                max_dist = r * 2.2
-                if dist > max_dist:
+                max_d = r * 2.5
+                if dist > max_d:
                     continue
-
-                alpha_factor = max(0, 1 - dist / max_dist)
-                # Colour based on distance: brighter near center
-                if dist < r * 0.85:
-                    col_hex = "#0A2030"
-                elif dist < r * 1.3:
-                    col_hex = "#061828"
+                fade = max(0.0, 1.0 - dist / max_d)
+                if dist < r * 0.80:
+                    col_h = "#0C2030"
+                elif dist < r * 1.20:
+                    col_h = "#071828"
+                elif dist < r * 1.80:
+                    col_h = "#041220"
                 else:
-                    col_hex = "#040F1A"
+                    col_h = "#030C18"
 
                 pts = []
                 for k in range(6):
-                    ang = math.radians(60 * k + 30)
-                    pts.extend([hx + hs * 0.95 * math.cos(ang), hy + hs * 0.95 * math.sin(ang)])
+                    a = math.radians(60 * k + 30)
+                    pts.extend([hx + HEX_R*0.90*math.cos(a), hy + HEX_R*0.90*math.sin(a)])
+                c.create_polygon(*pts, outline=col_h, fill='', tags="hexgrid", width=1)
 
-                c.create_polygon(*pts, outline=col_hex, fill='', tags="hexgrid", width=1)
-
-        # Keep hex grid below everything else
         c.tag_lower("hexgrid")
 
-    def _draw_left_panel(self, cx, cy, r, t):
+    def _draw_left_panel(self, cx, cy, r):
         c = self._canvas
-        pw = max(140, min(200, (cx - r * 1.55) * 0.9))
-        px = 12
-        py = max(55, int(cy - r * 0.9))
-        ph = int(r * 1.8)
+        gap = r * 1.68
+        pw  = max(130, min(190, cx - gap - 12))
+        px  = 10
+        py  = max(50, int(cy - r * 1.05))
+        ph  = int(r * 2.10)
+        ex  = px + pw   # right edge
 
-        # Border
-        bpts = [(px, py, px + pw, py), (px, py, px, py + ph),
-                (px + pw, py, px + pw, py + ph), (px, py + ph, px + pw, py + ph)]
-        for i, (x1, y1, x2, y2) in enumerate(bpts):
-            c.coords(self._lp_border[i], x1, y1, x2, y2)
+        # Panel border
+        bpts = [(px,py,ex,py),(px,py,px,py+ph),(ex,py,ex,py+ph),(px,py+ph,ex,py+ph)]
+        for i,(x1,y1,x2,y2) in enumerate(bpts):
+            c.coords(self._lp_b[i], x1,y1,x2,y2)
+
+        # Corner accents (L-brackets at each corner)
+        s2 = 10
+        ca = [(px,py,px+s2,py),(px,py,px,py+s2),(ex,py,ex-s2,py),(ex,py,ex,py+s2),
+              (px,py+ph,px+s2,py+ph),(px,py+ph,px,py+ph-s2),(ex,py+ph,ex-s2,py+ph),(ex,py+ph,ex,py+ph-s2)]
+        for i,(x1,y1,x2,y2) in enumerate(ca):
+            c.coords(self._lp_c[i], x1,y1,x2,y2)
 
         lx = px + 10
-        line_h = 16
+        lh = 15
 
-        c.coords(self._lp_title, lx, py + 10)
-        c.coords(self._lp_cpu_l, lx, py + 10 + line_h * 2)
-        c.coords(self._lp_cpu_v, lx + 52, py + 10 + line_h * 2)
+        c.coords(self._lp_title,   lx, py + 10)
+        c.coords(self._lp_cpu_l,   lx, py + 10 + lh*2)
+        c.coords(self._lp_cpu_v,   lx + 46, py + 10 + lh*2)
         c.itemconfig(self._lp_cpu_v, text=f"{self._cpu:.0f}%")
 
         # CPU bar
-        bx1, by1 = lx, py + 10 + line_h * 3
-        bx2, by2 = px + pw - 10, by1 + 6
-        c.coords(self._lp_cpu_bg, bx1, by1, bx2, by2)
-        fill_w = bx1 + (bx2 - bx1) * self._cpu / 100
-        c.coords(self._lp_cpu_fg, bx1, by1, fill_w, by2)
+        bx1,by1,bx2,by2 = lx, py+10+lh*3, ex-10, py+10+lh*3+7
+        c.coords(self._lp_cpu_bg, bx1,by1,bx2,by2)
+        fw = bx1 + (bx2-bx1)*self._cpu/100
+        c.coords(self._lp_cpu_fg, bx1,by1,fw,by2)
 
-        c.coords(self._lp_ram_l, lx, py + 10 + line_h * 4)
-        c.coords(self._lp_ram_v, lx + 52, py + 10 + line_h * 4)
+        c.coords(self._lp_ram_l, lx, py+10+lh*4)
+        c.coords(self._lp_ram_v, lx+46, py+10+lh*4)
         c.itemconfig(self._lp_ram_v, text=f"{self._ram:.0f}%")
 
-        bx1, by1 = lx, py + 10 + line_h * 5
-        bx2, by2 = px + pw - 10, by1 + 6
-        c.coords(self._lp_ram_bg, bx1, by1, bx2, by2)
-        fill_w = bx1 + (bx2 - bx1) * self._ram / 100
-        c.coords(self._lp_ram_fg, bx1, by1, fill_w, by2)
+        bx1,by1,bx2,by2 = lx, py+10+lh*5, ex-10, py+10+lh*5+7
+        c.coords(self._lp_ram_bg, bx1,by1,bx2,by2)
+        fw = bx1 + (bx2-bx1)*self._ram/100
+        c.coords(self._lp_ram_fg, bx1,by1,fw,by2)
 
-        c.coords(self._lp_audio, lx, py + 10 + line_h * 6)
-        c.coords(self._lp_link,  lx, py + 10 + line_h * 7)
-        c.coords(self._lp_time,  lx, py + 10 + line_h * 8)
+        now = datetime.now()
+        extras = [
+            f"AUDIO  : 48kHz",
+            f"NEURAL : ONLINE",
+            f"SESSION: {now.strftime('%H:%M')}",
+            f"DATE   : {now.strftime('%d %b %Y')}",
+        ]
+        for i, ex_lbl in enumerate(self._lp_extra[:4]):
+            c.coords(ex_lbl, lx, py+10+lh*(7+i))
+            c.itemconfig(ex_lbl, text=extras[i])
+
+        # Data stream
+        for i, sl in enumerate(self._lp_stream):
+            c.coords(sl, lx, py+10+lh*(12+i))
+            c.itemconfig(sl, text=self._stream_l[i] if i < len(self._stream_l) else "")
 
     def _draw_right_panel(self, cx, cy, r):
         c = self._canvas
-        pw = max(140, min(200, (self._w - cx - r * 1.55) * 0.9))
-        px = self._w - 12 - pw
-        py = max(55, int(cy - r * 0.9))
-        ph = int(r * 1.8)
+        gap = r * 1.68
+        pw  = max(130, min(190, self._w - cx - gap - 12))
+        px  = int(self._w - 10 - pw)
+        py  = max(50, int(cy - r * 1.05))
+        ph  = int(r * 2.10)
+        ex  = self._w - 10
+        rx  = ex - 10   # text right anchor x
 
-        bpts = [(px, py, px + pw, py), (px, py, px, py + ph),
-                (px + pw, py, px + pw, py + ph), (px, py + ph, px + pw, py + ph)]
-        for i, (x1, y1, x2, y2) in enumerate(bpts):
-            c.coords(self._rp_border[i], x1, y1, x2, y2)
+        bpts = [(px,py,ex,py),(px,py,px,py+ph),(ex,py,ex,py+ph),(px,py+ph,ex,py+ph)]
+        for i,(x1,y1,x2,y2) in enumerate(bpts):
+            c.coords(self._rp_b[i], x1,y1,x2,y2)
 
-        rx = self._w - 22
-        line_h = 15
-        c.coords(self._rp_title, rx, py + 10)
-        c.coords(self._rp_model, rx, py + 10 + line_h * 2)
-        c.coords(self._rp_voice, rx, py + 10 + line_h * 3)
-        c.coords(self._rp_stt,   rx, py + 10 + line_h * 4)
-        c.coords(self._rp_lat,   rx, py + 10 + line_h * 5)
-        c.coords(self._rp_sec,   rx, py + 10 + line_h * 6)
+        s2 = 10
+        ca = [(px,py,px+s2,py),(px,py,px,py+s2),(ex,py,ex-s2,py),(ex,py,ex,py+s2),
+              (px,py+ph,px+s2,py+ph),(px,py+ph,px,py+ph-s2),(ex,py+ph,ex-s2,py+ph),(ex,py+ph,ex,py+ph-s2)]
+        for i,(x1,y1,x2,y2) in enumerate(ca):
+            c.coords(self._rp_c[i], x1,y1,x2,y2)
 
-    def _draw_dialogue_panel(self):
+        lh = 15
+        c.coords(self._rp_title, rx, py+10)
+
+        voice = self.config.get('voice_name', 'en-GB-RyanNeural').split('-')[-1].replace('Neural','')
+        rlines = [
+            f"MODEL   : GEMINI-2.0",
+            f"VOICE   : {voice.upper()}",
+            f"STT     : WHISPER",
+            f"LATENCY : <100ms",
+            f"ENCRYPT : AES-256",
+            f"STATUS  : SECURE",
+        ]
+        for i, rl in enumerate(self._rp_lines):
+            c.coords(rl, rx, py+10+lh*(2+i))
+            c.itemconfig(rl, text=rlines[i])
+
+        for i, sl in enumerate(self._rp_stream):
+            c.coords(sl, rx, py+10+lh*(10+i))
+            c.itemconfig(sl, text=self._stream_r[i] if i < len(self._stream_r) else "")
+
+    def _draw_dialogue(self, t):
         c = self._canvas
-        margin = 12
-        px = margin
-        pw = self._w - margin * 2
-        ph = 70
+        mg = 12
+        ph = 72
         py = self._h - ph - 4
+        pw = self._w - mg*2
 
-        c.coords(self._dp_bg, px, py, px + pw, py + ph)
-        c.coords(self._dp_divider, px, py, px + pw, py)
-        c.coords(self._dp_src,  px + 12, py + 10)
-        c.itemconfig(self._dp_src, text=f"● {self._last_source}")
-        c.coords(self._dp_time, px + pw - 12, py + 10)
-        c.coords(self._dp_text, px + 12, py + 28)
-        c.itemconfig(self._dp_text, text=self._last_text, width=pw - 24)
+        c.coords(self._dp_bg,  mg, py, mg+pw, py+ph)
+        c.coords(self._dp_div, mg, py, mg+pw, py)
+        c.coords(self._dp_src, mg+14, py+11)
+        c.itemconfig(self._dp_src, text=f"● {self._diag_source}")
+        c.coords(self._dp_clk, mg+pw-14, py+11)
+        c.coords(self._dp_txt, mg+14, py+30)
+        c.itemconfig(self._dp_txt, text=self._diag_text, width=pw-28)
 
-    def _draw_oscilloscope(self, t):
+    def _draw_osc(self, t, spd, mid, dim):
         c = self._canvas
-        s = STATE[self._status]
+        n = 70
+        oy = self._h - 82
         pts1, pts2 = [], []
-        npts = 60
-        oy = self._h - 78
-        for i in range(npts):
-            x = self._w * i / (npts - 1)
-            amp1 = s['amp'] * 0.15
-            amp2 = s['amp'] * 0.08
-            y1 = oy + amp1 * math.sin(t * s['speed'] * 0.5 + i * 0.25)
-            y2 = oy + amp2 * math.sin(t * s['speed'] * 0.3 + i * 0.18 + 1.2)
-            pts1.extend([x, y1])
-            pts2.extend([x, y2])
+        for i in range(n):
+            x = self._w * i / (n-1)
+            a1 = t * spd * 0.4 + i * 0.22
+            a2 = t * spd * 0.25 + i * 0.15 + 1.1
+            pts1.extend([x, oy + STATE[self._status]['amp'] * 0.12 * math.sin(a1)])
+            pts2.extend([x, oy + STATE[self._status]['amp'] * 0.07 * math.sin(a2)])
         if len(pts1) >= 4:
             c.coords(self._osc1, *pts1)
             c.coords(self._osc2, *pts2)
-        c.itemconfig(self._osc1, fill=s['mid'])
-        c.itemconfig(self._osc2, fill=s['dim'])
+        c.itemconfig(self._osc1, fill=mid)
+        c.itemconfig(self._osc2, fill=dim)
 
-    # ─────────────────────────────────────────────────────────────────────────
-    # Public API (called from main.py)
-    # ─────────────────────────────────────────────────────────────────────────
+    # ── COLOUR HELPERS ───────────────────────────────────────────────────────
+
+    @staticmethod
+    def _lerp_colour(c1: str, c2: str, t: float) -> str:
+        """Linear interpolate between two hex colour strings."""
+        try:
+            r1,g1,b1 = int(c1[1:3],16),int(c1[3:5],16),int(c1[5:7],16)
+            r2,g2,b2 = int(c2[1:3],16),int(c2[3:5],16),int(c2[5:7],16)
+            t = max(0.0, min(1.0, t))
+            return f"#{int(r1+(r2-r1)*t):02X}{int(g1+(g2-g1)*t):02X}{int(b1+(b2-b1)*t):02X}"
+        except Exception:
+            return c1
+
+    @staticmethod
+    def _shift_colour(c1: str, offset: int) -> str:
+        """Brighten a hex colour by adding offset to each channel."""
+        try:
+            r,g,b = int(c1[1:3],16),int(c1[3:5],16),int(c1[5:7],16)
+            return f"#{min(r+offset,255):02X}{min(g+offset,255):02X}{min(b+offset,255):02X}"
+        except Exception:
+            return c1
+
+    # ── PUBLIC API ───────────────────────────────────────────────────────────
 
     def set_status(self, status: str):
         if status in STATE:
             self._status = status
-            # Flash colour on activate button
-            if status == 'listening':
-                self._activate_btn.configure(fg='#00FF99', text="● LISTENING — SPEAK NOW...")
-            elif status == 'thinking':
-                self._activate_btn.configure(fg=GOLD, text="◎ PROCESSING NEURAL QUERY...")
-            elif status == 'speaking':
-                self._activate_btn.configure(fg=CYAN_BRIGHT, text="▶ AUDIO OUTPUT ACTIVE...")
-            else:
-                hk = self.config.get('hotkey', 'P').upper()
-                self._activate_btn.configure(fg=CYAN_BRIGHT, text=f"◉   ACTIVATE VOICE INTERFACE   [ {hk} ]")
+        if status == 'listening':
+            self._activate_btn.configure(fg=GREEN_LIT, text="● LISTENING — SPEAK NOW...")
+        elif status == 'thinking':
+            self._activate_btn.configure(fg=GOLD, text="◎ NEURAL SYNTHESIS IN PROGRESS...")
+        elif status == 'speaking':
+            self._activate_btn.configure(fg=CYAN_BRIGHT, text="▶ AUDIO MATRIX TRANSMITTING...")
+        else:
+            hk = self.config.get('hotkey', 'P').upper()
+            self._activate_btn.configure(fg=CYAN_BRIGHT, text=f"◉   ACTIVATE VOICE INTERFACE   [ {hk} ]")
 
     def add_aria_message(self, text: str):
-        self._last_source = "ARIA"
-        self._last_text = text.upper() if len(text) < 80 else text
+        self._diag_source = "A.R.I.A."
+        self._diag_text = text
         self._canvas.itemconfig(self._dp_src, fill=CYAN_BRIGHT)
 
     def add_user_message(self, text: str):
-        self._last_source = "MADHAV"
-        self._last_text = text
+        self._diag_source = self.config.get('user_name', 'MADHAV').upper()
+        self._diag_text = text
         self._canvas.itemconfig(self._dp_src, fill=GOLD)
 
     def add_system_message(self, text: str):
-        self._last_source = "SYSTEM"
-        self._last_text = text
+        self._diag_source = "SYSTEM"
+        self._diag_text = text
         self._canvas.itemconfig(self._dp_src, fill=TEXT_MID)
 
     def bring_to_front(self):
@@ -642,16 +727,14 @@ class AppWindow:
     def run(self):
         self.root.mainloop()
 
-    # ─────────────────────────────────────────────────────────────────────────
-    # Internal Callbacks
-    # ─────────────────────────────────────────────────────────────────────────
+    # ── INTERNAL ─────────────────────────────────────────────────────────────
 
     def _on_mic_click(self):
         if self.on_listen_request:
             threading.Thread(target=self.on_listen_request, daemon=True).start()
 
     def _on_close(self):
-        self._anim_running = False
+        self._running = False
         self.root.destroy()
 
     def _toggle_fullscreen(self):
@@ -669,99 +752,87 @@ class AppWindow:
     def _reset_memory(self):
         if self.on_reset_memory:
             self.on_reset_memory()
-        self.add_system_message("Conversation memory cleared — session reset.")
+        self.add_system_message("Conversation memory cleared — session reset complete.")
 
-    # ─────────────────────────────────────────────────────────────────────────
-    # Settings Modal
-    # ─────────────────────────────────────────────────────────────────────────
+    # ── SETTINGS MODAL ───────────────────────────────────────────────────────
 
     def _open_settings(self):
         win = tk.Toplevel(self.root)
         win.title("ARIA — SYSTEM CONFIGURATION")
         win.configure(bg=BG)
-        win.geometry("520x700")
+        win.geometry("520x720")
         win.resizable(False, True)
         win.grab_set()
 
-        # Header
         tk.Label(win, text="◈  SYSTEM CONFIGURATION CONSOLE",
                  bg=BG, fg=CYAN_BRIGHT, font=('Consolas', 11, 'bold')).pack(pady=(14, 2))
         tk.Frame(win, bg=PANEL_EDGE, height=1).pack(fill='x', padx=16)
 
-        # Scrollable content
         outer = tk.Frame(win, bg=BG)
         outer.pack(fill='both', expand=True, padx=16, pady=8)
-        canvas_s = tk.Canvas(outer, bg=BG, bd=0, highlightthickness=0)
-        scrollbar = tk.Scrollbar(outer, orient='vertical', command=canvas_s.yview, bg=BG)
-        scroll_frame = tk.Frame(canvas_s, bg=BG)
-        scroll_frame.bind("<Configure>", lambda e: canvas_s.configure(scrollregion=canvas_s.bbox("all")))
-        canvas_s.create_window((0, 0), window=scroll_frame, anchor='nw')
-        canvas_s.configure(yscrollcommand=scrollbar.set)
-        canvas_s.pack(side='left', fill='both', expand=True)
-        scrollbar.pack(side='right', fill='y')
-        canvas_s.bind("<MouseWheel>", lambda e: canvas_s.yview_scroll(-1 * (e.delta // 120), "units"))
+        cs = tk.Canvas(outer, bg=BG, bd=0, highlightthickness=0)
+        sb = tk.Scrollbar(outer, orient='vertical', command=cs.yview, bg=BG)
+        sf = tk.Frame(cs, bg=BG)
+        sf.bind("<Configure>", lambda e: cs.configure(scrollregion=cs.bbox("all")))
+        cs.create_window((0,0), window=sf, anchor='nw')
+        cs.configure(yscrollcommand=sb.set)
+        cs.pack(side='left', fill='both', expand=True)
+        sb.pack(side='right', fill='y')
+        cs.bind("<MouseWheel>", lambda e: cs.yview_scroll(-1*(e.delta//120), "units"))
 
-        def section_title(text):
-            tk.Frame(scroll_frame, bg=PANEL_EDGE, height=1).pack(fill='x', pady=(12, 4))
-            tk.Label(scroll_frame, text=f"◈  {text}", bg=BG, fg=CYAN_MID,
-                     font=('Consolas', 8, 'bold')).pack(anchor='w')
+        def section(text):
+            tk.Frame(sf, bg=PANEL_EDGE, height=1).pack(fill='x', pady=(12,4))
+            tk.Label(sf, text=f"◈  {text}", bg=BG, fg=CYAN_MID, font=('Consolas',8,'bold')).pack(anchor='w')
 
         def field(label, var, note="", show=None):
-            f = tk.Frame(scroll_frame, bg=BG)
-            f.pack(fill='x', pady=3)
-            tk.Label(f, text=label, bg=BG, fg=TEXT_MID, font=('Consolas', 8, 'bold')).pack(anchor='w')
-            e = tk.Entry(f, textvariable=var, bg='#030C1A', fg=CYAN_BRIGHT, insertbackground=CYAN_BRIGHT,
-                         relief='flat', bd=0, font=('Consolas', 9), highlightthickness=1,
-                         highlightbackground=CYAN_DIM, highlightcolor=CYAN_BRIGHT,
-                         show=show or '')
+            f = tk.Frame(sf, bg=BG); f.pack(fill='x', pady=3)
+            tk.Label(f, text=label, bg=BG, fg=TEXT_MID, font=('Consolas',8,'bold')).pack(anchor='w')
+            e = tk.Entry(f, textvariable=var, bg='#030D1A', fg=CYAN_BRIGHT,
+                         insertbackground=CYAN_BRIGHT, relief='flat', bd=0,
+                         font=('Consolas',9), highlightthickness=1,
+                         highlightbackground=CYAN_DIM, highlightcolor=CYAN_BRIGHT, show=show or '')
             e.pack(fill='x', ipady=5)
             if note:
-                tk.Label(f, text=note, bg=BG, fg=TEXT_DIM, font=('Consolas', 7), wraplength=460).pack(anchor='w')
-            return e
+                tk.Label(f, text=note, bg=BG, fg=TEXT_DIM, font=('Consolas',7), wraplength=460).pack(anchor='w')
 
-        # Variables
-        user_var   = tk.StringVar(value=self.config.get('user_name', 'Madhav'))
-        api_var    = tk.StringVar(value=self.config.get('gemini_api_key', ''))
-        hk_var     = tk.StringVar(value=self.config.get('hotkey', 'P'))
-        summon_var = tk.StringVar(value=self.config.get('summon_hotkey', 'ctrl+space'))
-        city_var   = tk.StringVar(value=self.config.get('weather_city', ''))
-        speed_var  = tk.IntVar(value=self.config.get('voice_speed', 175))
-        voice_var  = tk.StringVar(value=self.config.get('voice_name', 'en-GB-RyanNeural'))
-        lang_var   = tk.StringVar(value=self.config.get('stt_language', 'en-IN'))
+        user_v  = tk.StringVar(value=self.config.get('user_name','Madhav'))
+        api_v   = tk.StringVar(value=self.config.get('gemini_api_key',''))
+        hk_v    = tk.StringVar(value=self.config.get('hotkey','P'))
+        sum_v   = tk.StringVar(value=self.config.get('summon_hotkey','ctrl+space'))
+        city_v  = tk.StringVar(value=self.config.get('weather_city',''))
+        spd_v   = tk.IntVar(value=self.config.get('voice_speed',175))
+        voice_v = tk.StringVar(value=self.config.get('voice_name','en-GB-RyanNeural'))
+        lang_v  = tk.StringVar(value=self.config.get('stt_language','en-IN'))
 
-        section_title("OPERATOR PROFILE")
-        field("OPERATOR NAME", user_var, "Your name for personalized greetings.")
+        section("OPERATOR PROFILE")
+        field("OPERATOR NAME", user_v, "Your name for personalized ARIA interactions.")
 
-        section_title("GEMINI NEURAL AI CORE")
-        field("GEMINI API KEY", api_var, "Free key from aistudio.google.com/apikey", show='*')
+        section("GEMINI NEURAL AI CORE")
+        field("GEMINI API KEY", api_v, "Free key from aistudio.google.com/apikey", show='*')
 
-        section_title("NEURAL VOICE MATRIX")
-        vf = tk.Frame(scroll_frame, bg=BG)
-        vf.pack(fill='x', pady=3)
-        tk.Label(vf, text="VOICE PROFILE", bg=BG, fg=TEXT_MID, font=('Consolas', 8, 'bold')).pack(anchor='w')
-        voice_opts = ["en-GB-RyanNeural", "en-US-GuyNeural", "en-US-ChristopherNeural",
-                      "en-US-BrianNeural", "en-US-EricNeural"]
-        vm = tk.OptionMenu(vf, voice_var, *voice_opts)
-        vm.config(bg='#030C1A', fg=CYAN_BRIGHT, activebackground='#061628',
+        section("NEURAL VOICE MATRIX")
+        vf = tk.Frame(sf, bg=BG); vf.pack(fill='x', pady=3)
+        tk.Label(vf, text="VOICE PROFILE", bg=BG, fg=TEXT_MID, font=('Consolas',8,'bold')).pack(anchor='w')
+        vm = tk.OptionMenu(vf, voice_v, "en-GB-RyanNeural", "en-US-GuyNeural",
+                           "en-US-ChristopherNeural", "en-US-BrianNeural", "en-US-EricNeural")
+        vm.config(bg='#030D1A', fg=CYAN_BRIGHT, activebackground='#061828',
                   activeforeground=CYAN_BRIGHT, relief='flat', highlightthickness=0,
-                  font=('Consolas', 9), cursor='hand2')
-        vm["menu"].config(bg='#030C1A', fg=CYAN_BRIGHT, font=('Consolas', 9))
+                  font=('Consolas',9), cursor='hand2')
+        vm["menu"].config(bg='#030D1A', fg=CYAN_BRIGHT, font=('Consolas',9))
         vm.pack(fill='x', pady=2)
 
         def _test_voice():
-            name = user_var.get().strip() or "Madhav"
-            v = voice_var.get()
-            txt = f"Hey {name}! ARIA online — all neural systems nominal and ready."
+            name = user_v.get().strip() or "Madhav"
+            v    = voice_v.get()
+            txt  = f"Hey {name}, ARIA online. All systems nominal and ready."
             def _play():
                 try:
                     import tempfile as tf
                     with tf.NamedTemporaryFile(suffix='.mp3', delete=False) as fp:
                         tmp = fp.name
-                    async def _gen():
+                    async def _g():
                         await edge_tts.Communicate(txt, voice=v).save(tmp)
-                    loop = asyncio.new_event_loop()
-                    loop.run_until_complete(_gen())
-                    loop.close()
+                    lp = asyncio.new_event_loop(); lp.run_until_complete(_g()); lp.close()
                     pygame.mixer.music.load(tmp)
                     pygame.mixer.music.play()
                     while pygame.mixer.music.get_busy():
@@ -772,64 +843,58 @@ class AppWindow:
                     print(f"[Settings] Voice test error: {ex}")
             threading.Thread(target=_play, daemon=True).start()
 
-        tk.Button(vf, text="🔊  PREVIEW VOICE", command=_test_voice,
-                  bg='#002030', fg=CYAN_BRIGHT, activebackground='#003040',
-                  relief='flat', bd=0, font=('Consolas', 8, 'bold'), cursor='hand2', pady=5
-                  ).pack(anchor='w', pady=(4, 0))
+        tk.Button(vf, text="🔊  PREVIEW VOICE SAMPLE", command=_test_voice,
+                  bg='#001C2C', fg=CYAN_BRIGHT, activebackground='#002C3C',
+                  relief='flat', bd=0, font=('Consolas',8,'bold'), cursor='hand2', pady=6
+                  ).pack(anchor='w', pady=(4,2))
 
-        sf = tk.Frame(scroll_frame, bg=BG)
-        sf.pack(fill='x', pady=4)
-        tk.Label(sf, text="SPEECH RATE", bg=BG, fg=TEXT_MID, font=('Consolas', 8, 'bold')).pack(anchor='w')
-        row = tk.Frame(sf, bg=BG)
-        row.pack(fill='x')
-        tk.Scale(row, variable=speed_var, from_=110, to=240, orient='horizontal',
+        sf2 = tk.Frame(sf, bg=BG); sf2.pack(fill='x', pady=4)
+        tk.Label(sf2, text="SPEECH RATE", bg=BG, fg=TEXT_MID, font=('Consolas',8,'bold')).pack(anchor='w')
+        row = tk.Frame(sf2, bg=BG); row.pack(fill='x')
+        tk.Scale(row, variable=spd_v, from_=100, to=240, orient='horizontal',
                  bg=BG, fg=CYAN_BRIGHT, troughcolor='#001828', highlightthickness=0,
-                 font=('Consolas', 8), length=340).pack(side='left')
-        tk.Label(row, textvariable=speed_var, bg=BG, fg=CYAN_MID, font=('Consolas', 9), width=4).pack(side='left')
+                 font=('Consolas',8), length=340).pack(side='left')
+        tk.Label(row, textvariable=spd_v, bg=BG, fg=CYAN_MID, font=('Consolas',9), width=4).pack(side='left')
 
-        section_title("SPEECH RECOGNITION")
-        lf = tk.Frame(scroll_frame, bg=BG)
-        lf.pack(fill='x', pady=3)
-        tk.Label(lf, text="MICROPHONE LANGUAGE", bg=BG, fg=TEXT_MID, font=('Consolas', 8, 'bold')).pack(anchor='w')
-        lang_opts = ["en-IN", "en-US", "en-GB"]
-        lm = tk.OptionMenu(lf, lang_var, *lang_opts)
-        lm.config(bg='#030C1A', fg=CYAN_BRIGHT, activebackground='#061628',
+        section("SPEECH RECOGNITION")
+        lf = tk.Frame(sf, bg=BG); lf.pack(fill='x', pady=3)
+        tk.Label(lf, text="MICROPHONE LANGUAGE", bg=BG, fg=TEXT_MID, font=('Consolas',8,'bold')).pack(anchor='w')
+        lm = tk.OptionMenu(lf, lang_v, "en-IN", "en-US", "en-GB")
+        lm.config(bg='#030D1A', fg=CYAN_BRIGHT, activebackground='#061828',
                   activeforeground=CYAN_BRIGHT, relief='flat', highlightthickness=0,
-                  font=('Consolas', 9), cursor='hand2')
-        lm["menu"].config(bg='#030C1A', fg=CYAN_BRIGHT, font=('Consolas', 9))
+                  font=('Consolas',9), cursor='hand2')
+        lm["menu"].config(bg='#030D1A', fg=CYAN_BRIGHT, font=('Consolas',9))
         lm.pack(fill='x', pady=2)
 
-        section_title("HOTKEYS & REGION")
-        field("VOICE ACTIVATION HOTKEY", hk_var, "Key to start listening (e.g. P, F2)")
-        field("SUMMON WINDOW SHORTCUT", summon_var, "Global toggle shortcut (e.g. ctrl+space)")
-        field("WEATHER CITY", city_var, "City for weather queries (e.g. Delhi, Mumbai)")
+        section("HOTKEYS & REGION")
+        field("VOICE ACTIVATION KEY", hk_v, "Key to start listening (e.g. P, F2, Space)")
+        field("SUMMON WINDOW SHORTCUT", sum_v, "Global toggle (e.g. ctrl+space)")
+        field("WEATHER CITY", city_v, "City name for weather queries (e.g. Delhi)")
 
-        # Save button
         tk.Frame(win, bg=PANEL_EDGE, height=1).pack(fill='x', padx=16)
-        btn_frame = tk.Frame(win, bg=BG)
-        btn_frame.pack(fill='x', padx=16, pady=12)
+        bf = tk.Frame(win, bg=BG); bf.pack(fill='x', padx=16, pady=12)
 
         def _save():
-            self.config['user_name']      = user_var.get().strip() or 'Madhav'
-            self.config['gemini_api_key'] = api_var.get().strip()
-            self.config['hotkey']         = hk_var.get().strip() or 'P'
-            self.config['summon_hotkey']  = summon_var.get().strip() or 'ctrl+space'
-            self.config['stt_language']   = lang_var.get().strip() or 'en-IN'
-            self.config['weather_city']   = city_var.get().strip()
-            self.config['voice_name']     = voice_var.get().strip() or 'en-GB-RyanNeural'
-            self.config['voice_speed']    = speed_var.get()
-
-            self._hdr_user.configure(text=f"OPERATOR: {self.config['user_name'].upper()}  ·  NEURAL CORE: ONLINE")
+            self.config['user_name']      = user_v.get().strip() or 'Madhav'
+            self.config['gemini_api_key'] = api_v.get().strip()
+            self.config['hotkey']         = hk_v.get().strip() or 'P'
+            self.config['summon_hotkey']  = sum_v.get().strip() or 'ctrl+space'
+            self.config['stt_language']   = lang_v.get().strip() or 'en-IN'
+            self.config['weather_city']   = city_v.get().strip()
+            self.config['voice_name']     = voice_v.get().strip() or 'en-GB-RyanNeural'
+            self.config['voice_speed']    = spd_v.get()
+            u = self.config['user_name'].upper()
+            self._hdr_user.configure(
+                text=f"OPERATOR : {u}   ·   NEURAL CORE : ONLINE   ·   WHISPER STT : ACTIVE")
             hk = self.config['hotkey'].upper()
             self._activate_btn.configure(text=f"◉   ACTIVATE VOICE INTERFACE   [ {hk} ]")
-
             if self.on_api_key_save:
                 self.on_api_key_save(self.config)
             win.destroy()
             self.add_system_message("Configuration synchronized — all parameters updated.")
 
-        tk.Button(btn_frame, text="▶  SAVE & SYNCHRONIZE",
+        tk.Button(bf, text="▶  SAVE & SYNCHRONIZE",
                   command=_save, bg='#001828', fg=CYAN_BRIGHT,
                   activebackground='#002840', activeforeground='#FFFFFF',
-                  relief='flat', bd=0, font=('Consolas', 10, 'bold'),
-                  cursor='hand2', pady=8).pack(fill='x')
+                  relief='flat', bd=0, font=('Consolas',10,'bold'),
+                  cursor='hand2', pady=9).pack(fill='x')

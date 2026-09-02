@@ -1,12 +1,16 @@
 """
-ARIA — Tony Stark JARVIS Scientific HUD Interface
-Fully responsive, fullscreen-adaptive Arc Reactor holographic console.
-Features real-time dynamic frequency visualizer, concentric rotating telemetry rings,
-live CPU/RAM hardware diagnostics, dual-channel oscilloscope, and a practical settings HUD.
+ARIA — A.R.I.A. JARVIS-Style Holographic Interface
+Iron Man / JARVIS faithful recreation with:
+- Hexagonal background grid
+- Animated arc reactor center ring (voice frequency visualizer)
+- Rotating outer scan rings
+- Holographic data panels (left / right / bottom)
+- Real-time CPU / RAM gauges
+- Blue layered glow pulses
+- Text telemetry streams
 """
 
 import tkinter as tk
-from tkinter import ttk
 import math
 import random
 import time
@@ -15,7 +19,6 @@ import os
 import asyncio
 from datetime import datetime
 
-# Suppress Pygame welcome banner
 os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = '1'
 import pygame
 
@@ -31,901 +34,802 @@ try:
 except ImportError:
     EDGE_TTS_AVAILABLE = False
 
-# ── Color Palette (Tony Stark JARVIS / Arc Reactor Holographic Palette) ──────
-BG          = "#010308"     # Deep space carbon black
-PANEL_BG    = "#020814"     # Holographic panel dark
-CYAN_CORE   = "#00F0FF"     # Arc Reactor bright cyan
-CYAN_NEON   = "#00C8FF"     # Vibrant electric cyan
-CYAN_MID    = "#0088B8"     # Mid-tone holographic cyan
-CYAN_DARK   = "#002C40"     # Dim structural lines
-CYAN_GRID   = "#001420"     # Ambient background grid
-GOLD_ARC    = "#FFB800"     # Stark gold accent
-GOLD_DIM    = "#664800"     # Dim gold
-TEXT_BRIGHT = "#E6FAFF"     # High-contrast holographic text
-TEXT_MID    = "#70B8D8"     # Secondary telemetry text
-TEXT_MUTED  = "#204860"     # Ambient background text
-ALERT_RED   = "#FF3344"     # Error alert
+# ── JARVIS Colour Palette ──────────────────────────────────────────────────────
+BG          = "#010409"     # Near-black background
+HEX_GRID    = "#03111E"     # Hex grid line colour
+PANEL_EDGE  = "#0A2840"     # Panel border
+CYAN_BRIGHT = "#00E5FF"     # Primary bright cyan
+CYAN_MID    = "#0099CC"     # Mid cyan
+CYAN_DIM    = "#004466"     # Dim structural cyan
+CYAN_GLOW   = "#002233"     # Ambient glow
+BLUE_RING   = "#0055AA"     # Outer ring blue
+BLUE_INNER  = "#003377"     # Inner ring
+GOLD        = "#FFB700"     # Stark gold accent
+GOLD_DIM    = "#664A00"
+TEXT_HI     = "#CCF0FF"     # Bright HUD text
+TEXT_MID    = "#5BA8C8"     # Secondary text
+TEXT_DIM    = "#1A4A64"     # Muted ambient text
+ALERT       = "#FF2244"     # Error/alert red
 
-# State configurations
-STATE_CFG = {
+# Status configs
+STATE = {
     'idle': {
-        'bright': '#00C8FF', 'mid': '#0077A0', 'dim': '#002838',
-        'label': 'SYSTEM STANDBY', 'amp': 10, 'speed': 1.2,
-        'core_color': '#004060', 'glow': '#001828',
-        'sub_status': 'AWAITING COMMAND',
+        'bright': '#00C5E5', 'mid': '#006B8A', 'dim': '#001E2A',
+        'label': 'STANDBY', 'amp': 6, 'speed': 1.0,
+        'glow': '#001020', 'ring': '#001C30', 'status': 'AWAITING INPUT',
     },
     'listening': {
-        'bright': '#00FF99', 'mid': '#00BB70', 'dim': '#004428',
-        'label': 'VOICE INPUT ACTIVE', 'amp': 48, 'speed': 6.5,
-        'core_color': '#00AA60', 'glow': '#003318',
-        'sub_status': 'ANALYZING ACOUSTIC STREAM',
+        'bright': '#00FF99', 'mid': '#00BB70', 'dim': '#003322',
+        'label': 'LISTENING', 'amp': 55, 'speed': 7.0,
+        'glow': '#002214', 'ring': '#003322', 'status': 'VOICE ACQUISITION ACTIVE',
     },
     'thinking': {
-        'bright': '#FFB800', 'mid': '#CC8800', 'dim': '#553300',
-        'label': 'NEURAL SYNTHESIS', 'amp': 32, 'speed': 4.0,
-        'core_color': '#CC8800', 'glow': '#332000',
-        'sub_status': 'QUERYING GEMINI CORE',
+        'bright': '#FFB700', 'mid': '#BB8800', 'dim': '#442E00',
+        'label': 'PROCESSING', 'amp': 30, 'speed': 3.5,
+        'glow': '#1A1000', 'ring': '#221800', 'status': 'NEURAL SYNTHESIS IN PROGRESS',
     },
     'speaking': {
-        'bright': '#00F0FF', 'mid': '#00A0E0', 'dim': '#003050',
-        'label': 'AUDIO OUTPUT ACTIVE', 'amp': 56, 'speed': 8.5,
-        'core_color': '#0088CC', 'glow': '#002038',
-        'sub_status': 'TRANSMITTING VOCAL MATRIX',
+        'bright': '#00E5FF', 'mid': '#0088BB', 'dim': '#002A3A',
+        'label': 'TRANSMITTING', 'amp': 65, 'speed': 9.0,
+        'glow': '#001828', 'ring': '#002233', 'status': 'AUDIO OUTPUT ACTIVE',
     },
     'error': {
-        'bright': '#FF3344', 'mid': '#AA2230', 'dim': '#441018',
-        'label': 'SYSTEM EXCEPTION', 'amp': 18, 'speed': 3.0,
-        'core_color': '#AA2230', 'glow': '#30080C',
-        'sub_status': 'TELEMETRY FAULT',
+        'bright': '#FF2244', 'mid': '#AA1530', 'dim': '#330A12',
+        'label': 'FAULT', 'amp': 20, 'speed': 3.0,
+        'glow': '#200508', 'ring': '#2A0810', 'status': 'SYSTEM EXCEPTION DETECTED',
     },
 }
 
-NUM_BARS  = 96     # Number of frequency bars in the Arc Reactor
-FPS       = 35     # Animation frame rate
+NUM_BARS  = 128    # Arc reactor frequency bars
+FPS       = 40     # Animation frame rate
+HEX_SIZE  = 28     # Hexagonal grid cell size
 
 
 class AppWindow:
     """
-    JARVIS Scientific HUD for ARIA.
-    100% Responsive and fullscreen-adaptive canvas with dynamic geometry,
-    live hardware telemetry, and an intuitive settings console.
+    Full JARVIS holographic HUD for ARIA.
+    Faithful Iron Man aesthetic with hex grid, arc reactor visualizer,
+    scan rings, holographic panels, and live telemetry.
     """
 
-    def __init__(
-        self,
-        config: dict,
-        on_listen_request=None,
-        on_api_key_save=None,
-        on_reset_memory=None,
-    ):
+    def __init__(self, config, on_listen_request=None, on_api_key_save=None, on_reset_memory=None):
         self.config = config
         self.on_listen_request = on_listen_request
         self.on_api_key_save = on_api_key_save
         self.on_reset_memory = on_reset_memory
 
-        # Dynamic canvas geometry
-        self._w = 640
-        self._h = 560
+        # Geometry
+        self._w = 900
+        self._h = 680
         self._cx = self._w / 2
-        self._cy = self._h / 2
-        self._base_r = 110
-
-        # Animation states
-        self._status = 'idle'
-        self._anim_running = True
-        self._rot_outer = 0.0
-        self._rot_inner = 0.0
-        self._bars = []
-        self._phases = [random.uniform(0, 2 * math.pi) for _ in range(NUM_BARS)]
-        self._osc_points = 80
+        self._cy = self._h / 2 - 30
+        self._base_r = 140
         self._fullscreen = False
 
-        # Live telemetry metrics
-        self._cpu_val = 0
-        self._ram_val = 0
-        self._last_telemetry_check = 0
+        # Animation
+        self._status = 'idle'
+        self._anim_running = True
+        self._rot1 = 0.0     # outer ring rotation
+        self._rot2 = 0.0     # inner ring (counter)
+        self._rot3 = 0.0     # dashed scan ring
+        self._phases = [random.uniform(0, 2 * math.pi) for _ in range(NUM_BARS)]
+        self._bar_vals = [0.0] * NUM_BARS
+        self._osc_t = 0.0
 
-        # Root window setup
+        # Hardware telemetry
+        self._cpu = 0
+        self._ram = 0
+        self._tel_tick = 0
+
+        # Dialogue
+        self._last_text = "ALL SYSTEMS NOMINAL — READY FOR INTERACTION"
+        self._last_source = "SYSTEM"
+        self._dialogue_scroll = []
+
+        # Root window
         self.root = tk.Tk()
-        self.root.title("A.R.I.A. // STARK INDUSTRIES HUD")
-        self.root.geometry("640x760")
-        self.root.minsize(500, 580)
+        self.root.title("A.R.I.A. // STARK INDUSTRIES")
+        self.root.geometry(f"{self._w}x{self._h}")
+        self.root.minsize(700, 520)
         self.root.configure(bg=BG)
         self.root.attributes('-topmost', True)
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
-
-        # Bind fullscreen and resize events
         self.root.bind("<F11>", lambda e: self._toggle_fullscreen())
         self.root.bind("<Escape>", lambda e: self._exit_fullscreen())
 
         self._build_ui()
         self._start_animation()
 
-    # ── UI Construction ───────────────────────────────────────────────────────
+    # ─────────────────────────────────────────────────────────────────────────
+    # UI Construction
+    # ─────────────────────────────────────────────────────────────────────────
 
     def _build_ui(self):
-        # 1. Top HUD Status Bar
+        # Top header bar
         self._build_header()
-
-        # 2. Fully Expanding Holographic Canvas
-        self._canvas_frame = tk.Frame(self.root, bg=BG)
-        self._canvas_frame.pack(fill='both', expand=True)
-
-        self._canvas = tk.Canvas(
-            self._canvas_frame,
-            bg=BG, bd=0, highlightthickness=0
-        )
+        # Main canvas (takes all space)
+        self._canvas = tk.Canvas(self.root, bg=BG, bd=0, highlightthickness=0)
         self._canvas.pack(fill='both', expand=True)
-        self._canvas.bind("<Configure>", self._on_canvas_resize)
-
-        # Create all canvas display objects
-        self._init_canvas_objects()
-
-        # 3. Bottom Dialogue HUD Readout
-        self._build_dialogue_hud()
-
-        # 4. Bottom Activate Button
+        self._canvas.bind("<Configure>", self._on_resize)
+        self._init_canvas_items()
+        # Bottom control bar
         self._build_footer()
 
     def _build_header(self):
-        """Top Stark Industries header with status pills and controls."""
-        hdr = tk.Frame(self.root, bg=BG, height=48)
-        hdr.pack(fill='x', padx=16, pady=(8, 2))
+        hdr = tk.Frame(self.root, bg=BG, height=44)
+        hdr.pack(fill='x')
         hdr.pack_propagate(False)
 
-        # Left branding
-        left_box = tk.Frame(hdr, bg=BG)
-        left_box.pack(side='left', fill='y')
+        # Left: branding
+        lf = tk.Frame(hdr, bg=BG)
+        lf.pack(side='left', padx=14, fill='y')
+        tk.Label(lf, text="◈  STARK INDUSTRIES  ·  A.R.I.A. SYSTEM v4.2",
+                 bg=BG, fg=CYAN_BRIGHT, font=('Consolas', 10, 'bold')).pack(anchor='w', pady=(6, 0))
+        user = self.config.get('user_name', 'MADHAV').upper()
+        self._hdr_user = tk.Label(lf, text=f"OPERATOR: {user}  ·  NEURAL CORE: ONLINE",
+                                   bg=BG, fg=TEXT_DIM, font=('Consolas', 7))
+        self._hdr_user.pack(anchor='w')
 
-        tk.Label(
-            left_box, text="◈ STARK INDUSTRIES // ARIA OS v4.2",
-            bg=BG, fg=CYAN_NEON,
-            font=('Consolas', 11, 'bold')
-        ).pack(anchor='w')
+        # Right: buttons
+        rf = tk.Frame(hdr, bg=BG)
+        rf.pack(side='right', padx=10, fill='y')
+        for icon, cmd in [("⛶", self._toggle_fullscreen), ("⟳", self._reset_memory),
+                           ("📌", self._toggle_topmost), ("⚙", self._open_settings)]:
+            tk.Button(rf, text=icon, command=cmd, bg='#020C18', fg=CYAN_MID,
+                      activebackground='#051830', activeforeground=CYAN_BRIGHT,
+                      relief='flat', bd=0, font=('Consolas', 11), width=3, cursor='hand2'
+                      ).pack(side='right', padx=2, pady=8)
 
-        user_name = self.config.get('user_name', 'Madhav').upper()
-        self._header_user_lbl = tk.Label(
-            left_box, text=f"OPERATOR: {user_name}  |  QUANTUM NEURAL CORE: ONLINE",
-            bg=BG, fg=TEXT_MUTED,
-            font=('Consolas', 8)
-        )
-        self._header_user_lbl.pack(anchor='w')
-
-        # Right utility buttons
-        btn_box = tk.Frame(hdr, bg=BG)
-        btn_box.pack(side='right', fill='y')
-
-        for icon, cmd, tip in [
-            ("⛶", self._toggle_fullscreen, "Toggle Fullscreen (F11)"),
-            ("⟳", self._reset_memory, "Reset Memory"),
-            ("📌", self._toggle_topmost, "Toggle Always On Top"),
-            ("⚙", self._open_settings, "Settings Console"),
-        ]:
-            b = tk.Button(
-                btn_box, text=icon, command=cmd,
-                bg='#030B18', fg=CYAN_MID,
-                activebackground='#081830', activeforeground=CYAN_CORE,
-                relief='flat', bd=0, font=('Consolas', 11),
-                width=3, cursor='hand2'
-            )
-            b.pack(side='right', padx=3, pady=4)
-
-        # Tech divider line
-        tk.Frame(self.root, bg=CYAN_DARK, height=1).pack(fill='x', padx=12, pady=(2, 0))
-
-    def _init_canvas_objects(self):
-        """Pre-allocate all canvas elements for high-performance coordinate updates."""
-        # 1. Background grid elements
-        self._bg_lines = []
-        for _ in range(8):
-            self._bg_lines.append(self._canvas.create_line(0, 0, 0, 0, fill=CYAN_GRID, width=1))
-
-        # 2. Corner HUD brackets (8 line IDs)
-        self._corner_lines = [self._canvas.create_line(0, 0, 0, 0, fill=CYAN_DARK, width=1) for _ in range(8)]
-
-        # 3. Concentric Telemetry Circles
-        self._ring_outer_border = self._canvas.create_oval(0, 0, 0, 0, outline='#001420', width=1)
-        self._ring_degree_track = self._canvas.create_oval(0, 0, 0, 0, outline='#002234', width=1)
-        self._ring_inner_track  = self._canvas.create_oval(0, 0, 0, 0, outline='#001828', width=1)
-
-        # Degree Labels
-        self._deg_000 = self._canvas.create_text(0, 0, text="000°", fill=TEXT_MUTED, font=('Consolas', 7))
-        self._deg_090 = self._canvas.create_text(0, 0, text="090°", fill=TEXT_MUTED, font=('Consolas', 7))
-        self._deg_180 = self._canvas.create_text(0, 0, text="180°", fill=TEXT_MUTED, font=('Consolas', 7))
-        self._deg_270 = self._canvas.create_text(0, 0, text="270°", fill=TEXT_MUTED, font=('Consolas', 7))
-
-        # 4. Dynamic Rotating Outer Arcs
-        self._outer_arcs = [self._canvas.create_line(0, 0, 0, 0, fill=CYAN_DARK, width=2, capstyle='round') for _ in range(4)]
-
-        # 5. Dynamic Counter-Rotating Ticks
-        self._inner_ticks = [self._canvas.create_line(0, 0, 0, 0, fill='#003850', width=1) for _ in range(16)]
-
-        # 6. Equalizer Frequency Bars
-        self._bars = [self._canvas.create_line(0, 0, 0, 0, fill=CYAN_DARK, width=2, capstyle='round') for _ in range(NUM_BARS)]
-
-        # 7. Arc Reactor Core Housings & Masks
-        self._core_mask_outer = self._canvas.create_oval(0, 0, 0, 0, fill=BG, outline='#002840', width=2)
-        self._core_ring_gold  = self._canvas.create_oval(0, 0, 0, 0, outline=GOLD_DIM, width=1)
-        self._core_ring_cyan  = self._canvas.create_oval(0, 0, 0, 0, outline='#004060', width=1)
-
-        # Core Glow Layers
-        self._core_glow_3 = self._canvas.create_oval(0, 0, 0, 0, fill='#001018', outline='#002030', width=1)
-        self._core_glow_2 = self._canvas.create_oval(0, 0, 0, 0, fill='#001824', outline='#003048', width=1)
-        self._core_glow_1 = self._canvas.create_oval(0, 0, 0, 0, fill='#002838', outline='#004868', width=1)
-
-        # Central Titles
-        self._center_title = self._canvas.create_text(0, 0, text="A.R.I.A.", fill=CYAN_CORE, font=('Consolas', 18, 'bold'))
-        self._center_status = self._canvas.create_text(0, 0, text="STANDBY", fill=CYAN_MID, font=('Consolas', 8, 'bold'))
-
-        # 8. Left Live Telemetry & Hardware Gauges
-        self._tel_left_box = [
-            self._canvas.create_text(0, 0, text="[ SYSTEM TELEMETRY ]", fill=CYAN_MID, font=('Consolas', 8, 'bold'), anchor='w'),
-            self._canvas.create_text(0, 0, text="CPU: 0%", fill=TEXT_MID, font=('Consolas', 8), anchor='w'),
-            self._canvas.create_text(0, 0, text="RAM: 0%", fill=TEXT_MID, font=('Consolas', 8), anchor='w'),
-            self._canvas.create_text(0, 0, text="AUDIO: 48kHz 24-BIT", fill=TEXT_MUTED, font=('Consolas', 7), anchor='w'),
-            self._canvas.create_text(0, 0, text="LINK: NOMINAL", fill=TEXT_MUTED, font=('Consolas', 7), anchor='w'),
-        ]
-        # CPU/RAM gauge bar backgrounds & fills
-        self._gauge_cpu_bg   = self._canvas.create_line(0, 0, 0, 0, fill='#001828', width=4)
-        self._gauge_cpu_fill = self._canvas.create_line(0, 0, 0, 0, fill=CYAN_NEON, width=4)
-        self._gauge_ram_bg   = self._canvas.create_line(0, 0, 0, 0, fill='#001828', width=4)
-        self._gauge_ram_fill = self._canvas.create_line(0, 0, 0, 0, fill=CYAN_MID, width=4)
-
-        # 9. Right Diagnostics Box
-        self._tel_right_box = [
-            self._canvas.create_text(0, 0, text="[ NEURAL DIAGNOSTICS ]", fill=CYAN_MID, font=('Consolas', 8, 'bold'), anchor='e'),
-            self._canvas.create_text(0, 0, text="MODEL: GEMINI-2.0-FLASH", fill=TEXT_MID, font=('Consolas', 8), anchor='e'),
-            self._canvas.create_text(0, 0, text="VOICE: GUY NEURAL", fill=TEXT_MID, font=('Consolas', 8), anchor='e'),
-            self._canvas.create_text(0, 0, text="LATENCY: 12ms", fill=TEXT_MUTED, font=('Consolas', 7), anchor='e'),
-            self._canvas.create_text(0, 0, text="SECURITY: ACTIVE", fill=TEXT_MUTED, font=('Consolas', 7), anchor='e'),
-        ]
-
-        # 10. Bottom Dual Oscilloscope Wave
-        self._osc_line_1 = self._canvas.create_line([0, 0, 0, 0], fill=CYAN_DARK, width=1, smooth=True)
-        self._osc_line_2 = self._canvas.create_line([0, 0, 0, 0], fill='#001828', width=1, smooth=True)
-
-    def _build_dialogue_hud(self):
-        """Single sleek high-tech dialogue & telemetry subtitle banner."""
-        dialogue_frame = tk.Frame(self.root, bg=PANEL_BG, height=68)
-        dialogue_frame.pack(fill='x', padx=18, pady=(2, 6))
-        dialogue_frame.pack_propagate(False)
-
-        # Border line
-        tk.Frame(dialogue_frame, bg=CYAN_DARK, height=1).pack(fill='x')
-
-        inner_box = tk.Frame(dialogue_frame, bg=PANEL_BG)
-        inner_box.pack(fill='both', expand=True, padx=14, pady=6)
-
-        # Status indicator row
-        top_row = tk.Frame(inner_box, bg=PANEL_BG)
-        top_row.pack(fill='x')
-
-        self._hud_tag = tk.Label(
-            top_row, text="● TELEMETRY STREAM",
-            bg=PANEL_BG, fg=CYAN_MID,
-            font=('Consolas', 8, 'bold')
-        )
-        self._hud_tag.pack(side='left')
-
-        self._hud_time = tk.Label(
-            top_row, text=datetime.now().strftime("%H:%M:%S"),
-            bg=PANEL_BG, fg=TEXT_MUTED,
-            font=('Consolas', 8)
-        )
-        self._hud_time.pack(side='right')
-
-        # Main response readout
-        self._dialogue_lbl = tk.Label(
-            inner_box,
-            text="All systems nominal. Ready for interaction.",
-            bg=PANEL_BG, fg=TEXT_BRIGHT,
-            font=('Consolas', 9),
-            anchor='w', justify='left',
-            wraplength=580
-        )
-        self._dialogue_lbl.pack(fill='x', pady=(2, 0))
+        # Separator line
+        tk.Frame(self.root, bg=PANEL_EDGE, height=1).pack(fill='x')
 
     def _build_footer(self):
-        """Bottom HUD activation trigger button."""
-        footer = tk.Frame(self.root, bg=BG, height=58)
-        footer.pack(fill='x', padx=18, pady=(0, 10))
-        footer.pack_propagate(False)
+        foot = tk.Frame(self.root, bg='#020C18', height=50)
+        foot.pack(fill='x', side='bottom')
+        foot.pack_propagate(False)
 
-        hotkey = self.config.get('hotkey', 'F2').upper()
+        tk.Frame(foot, bg=PANEL_EDGE, height=1).pack(fill='x')
+
+        inner = tk.Frame(foot, bg='#020C18')
+        inner.pack(fill='both', expand=True, padx=16, pady=6)
+
+        hk = self.config.get('hotkey', 'P').upper()
         self._activate_btn = tk.Button(
-            footer,
-            text=f"◉  ACTIVATE VOICE INTERFACE  [{hotkey}]",
+            inner,
+            text=f"◉   ACTIVATE VOICE INTERFACE   [ {hk} ]",
             command=self._on_mic_click,
-            bg='#020B1A', fg=CYAN_CORE,
-            activebackground='#041530', activeforeground='#FFFFFF',
+            bg='#020C18', fg=CYAN_BRIGHT,
+            activebackground='#031828', activeforeground='#FFFFFF',
             relief='flat', bd=0,
             font=('Consolas', 11, 'bold'),
-            cursor='hand2',
-            height=2,
+            cursor='hand2'
         )
         self._activate_btn.pack(fill='both', expand=True)
 
-    # ── Canvas Resize & Coordinate Calculation ────────────────────────────────
+    # ─────────────────────────────────────────────────────────────────────────
+    # Canvas Items
+    # ─────────────────────────────────────────────────────────────────────────
 
-    def _on_canvas_resize(self, event):
-        """Dynamically recompute geometry when window is resized or maximized."""
+    def _init_canvas_items(self):
+        c = self._canvas
+
+        # ── Layer 0: Hex grid (many polygons) ────────────────────────────────
+        # We draw hex grid dynamically in the animation loop using a tag
+        # to avoid pre-allocating hundreds of static items here.
+
+        # ── Layer 1: Scan rings (concentric circles) ─────────────────────────
+        self._ring_d1 = c.create_oval(0,0,1,1, outline='#001C30', width=1)   # outermost dim
+        self._ring_d2 = c.create_oval(0,0,1,1, outline='#002844', width=1)
+        self._ring_d3 = c.create_oval(0,0,1,1, outline='#003355', width=1)
+
+        # Degree marks on outer ring
+        self._deg_marks = [c.create_text(0,0, text=f"{i*30:03d}°", fill=TEXT_DIM, font=('Consolas',6)) for i in range(12)]
+
+        # ── Layer 2: Rotating arc segments (outer scanner) ───────────────────
+        self._outer_arcs = [c.create_arc(0,0,1,1, start=0, extent=20, outline=CYAN_DIM, style='arc', width=2) for _ in range(6)]
+        # Inner counter-rotating dashes
+        self._inner_arcs = [c.create_arc(0,0,1,1, start=0, extent=8, outline=BLUE_RING, style='arc', width=1) for _ in range(12)]
+
+        # ── Layer 3: Frequency bars (arc reactor) ────────────────────────────
+        self._freq_bars = [c.create_line(0,0,1,1, fill=CYAN_DIM, width=2, capstyle='round') for _ in range(NUM_BARS)]
+
+        # ── Layer 4: Core circles ─────────────────────────────────────────────
+        self._core_outer_mask = c.create_oval(0,0,1,1, fill=BG, outline='#003050', width=2)
+        self._core_glow3 = c.create_oval(0,0,1,1, fill='#000D15', outline='#001825', width=1)
+        self._core_glow2 = c.create_oval(0,0,1,1, fill='#001520', outline='#002840', width=1)
+        self._core_glow1 = c.create_oval(0,0,1,1, fill='#001C2C', outline='#003C5A', width=2)
+        self._core_gold  = c.create_oval(0,0,1,1, outline=GOLD_DIM, width=1)
+        self._core_ring  = c.create_oval(0,0,1,1, outline=CYAN_DIM, width=2)
+
+        # ── Layer 5: Center text ──────────────────────────────────────────────
+        self._txt_name   = c.create_text(0,0, text="A.R.I.A.", fill=CYAN_BRIGHT, font=('Consolas', 20, 'bold'))
+        self._txt_status = c.create_text(0,0, text="STANDBY", fill=CYAN_MID, font=('Consolas', 9, 'bold'))
+        self._txt_sub    = c.create_text(0,0, text="AWAITING INPUT", fill=TEXT_DIM, font=('Consolas', 7))
+
+        # ── Layer 6: Left panel — System telemetry ───────────────────────────
+        self._lp_title  = c.create_text(0,0, text="◈ SYSTEM TELEMETRY", fill=CYAN_MID, font=('Consolas',8,'bold'), anchor='w')
+        self._lp_cpu_l  = c.create_text(0,0, text="CPU  :", fill=TEXT_MID, font=('Consolas',8), anchor='w')
+        self._lp_cpu_v  = c.create_text(0,0, text="0%", fill=CYAN_BRIGHT, font=('Consolas',8,'bold'), anchor='w')
+        self._lp_ram_l  = c.create_text(0,0, text="RAM  :", fill=TEXT_MID, font=('Consolas',8), anchor='w')
+        self._lp_ram_v  = c.create_text(0,0, text="0%", fill=CYAN_MID, font=('Consolas',8,'bold'), anchor='w')
+        self._lp_cpu_bg = c.create_rectangle(0,0,1,1, fill='#001828', outline='#002840', width=1)
+        self._lp_cpu_fg = c.create_rectangle(0,0,1,1, fill=CYAN_BRIGHT, outline='')
+        self._lp_ram_bg = c.create_rectangle(0,0,1,1, fill='#001828', outline='#002840', width=1)
+        self._lp_ram_fg = c.create_rectangle(0,0,1,1, fill=CYAN_MID, outline='')
+        self._lp_audio  = c.create_text(0,0, text="AUDIO  : 48kHz", fill=TEXT_DIM, font=('Consolas',7), anchor='w')
+        self._lp_link   = c.create_text(0,0, text="NEURAL : ONLINE", fill=TEXT_DIM, font=('Consolas',7), anchor='w')
+        self._lp_time   = c.create_text(0,0, text="--:--:--", fill=TEXT_DIM, font=('Consolas',7), anchor='w')
+
+        # Panel border lines
+        self._lp_border = [c.create_line(0,0,1,1, fill=PANEL_EDGE, width=1) for _ in range(4)]
+
+        # ── Layer 7: Right panel — Neural diagnostics ────────────────────────
+        self._rp_title  = c.create_text(0,0, text="NEURAL DIAGNOSTICS ◈", fill=CYAN_MID, font=('Consolas',8,'bold'), anchor='e')
+        self._rp_model  = c.create_text(0,0, text="MODEL  : GEMINI-2.0-FLASH", fill=TEXT_MID, font=('Consolas',7), anchor='e')
+        self._rp_voice  = c.create_text(0,0, text="VOICE  : RYAN NEURAL", fill=TEXT_MID, font=('Consolas',7), anchor='e')
+        self._rp_stt    = c.create_text(0,0, text="STT    : WHISPER / LOCAL", fill=TEXT_MID, font=('Consolas',7), anchor='e')
+        self._rp_lat    = c.create_text(0,0, text="LATENCY: <100ms", fill=TEXT_DIM, font=('Consolas',7), anchor='e')
+        self._rp_sec    = c.create_text(0,0, text="SECURE : ACTIVE", fill=TEXT_DIM, font=('Consolas',7), anchor='e')
+        self._rp_border = [c.create_line(0,0,1,1, fill=PANEL_EDGE, width=1) for _ in range(4)]
+
+        # ── Layer 8: Bottom dialogue panel ───────────────────────────────────
+        self._dp_bg     = c.create_rectangle(0,0,1,1, fill='#020B18', outline=PANEL_EDGE, width=1)
+        self._dp_src    = c.create_text(0,0, text="● SYSTEM", fill=CYAN_MID, font=('Consolas',8,'bold'), anchor='w')
+        self._dp_time   = c.create_text(0,0, text="--:--:--", fill=TEXT_DIM, font=('Consolas',7), anchor='e')
+        self._dp_text   = c.create_text(0,0, text="ALL SYSTEMS NOMINAL — READY FOR INTERACTION",
+                                        fill=TEXT_HI, font=('Consolas', 9), anchor='w', width=600)
+        self._dp_divider = c.create_line(0,0,1,1, fill=PANEL_EDGE, width=1)
+
+        # Corner brackets
+        self._corners = [c.create_line(0,0,1,1, fill=CYAN_DIM, width=1) for _ in range(8)]
+
+        # Oscilloscope bottom
+        self._osc1 = c.create_line([0,0,1,1], fill=CYAN_DIM, width=1, smooth=True)
+        self._osc2 = c.create_line([0,0,1,1], fill='#001828', width=1, smooth=True)
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Resize Handler
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def _on_resize(self, event):
         if event.width < 50 or event.height < 50:
             return
-
         self._w = event.width
         self._h = event.height
         self._cx = self._w / 2
-        self._cy = self._h / 2
-        # Dynamic base radius: smoothly scales from windowed (~90px) to full screen (~200px+)
-        self._base_r = max(80, min(self._w * 0.22, self._h * 0.30))
+        # Center is slightly above middle to leave room for dialogue panel
+        self._cy = self._h * 0.44
+        self._base_r = max(90, min(self._w * 0.20, self._h * 0.28))
 
-        # Update dialogue label wrap width
-        self._dialogue_lbl.configure(wraplength=max(400, self._w - 60))
+        # Update dialogue text wrap
+        self._canvas.itemconfig(self._dp_text, width=max(300, self._w - 80))
 
-        # Update corner brackets
-        size = 24
+        # Corner brackets
+        s = 20
         coords = [
-            (20, 20, 20 + size, 20), (20, 20, 20, 20 + size),
-            (self._w - 20, 20, self._w - 20 - size, 20), (self._w - 20, 20, self._w - 20, 20 + size),
-            (20, self._h - 20, 20 + size, self._h - 20), (20, self._h - 20, 20, self._h - 20 - size),
-            (self._w - 20, self._h - 20, self._w - 20 - size, self._h - 20), (self._w - 20, self._h - 20, self._w - 20, self._h - 20 - size)
+            (8, 8, 8+s, 8), (8, 8, 8, 8+s),
+            (self._w-8, 8, self._w-8-s, 8), (self._w-8, 8, self._w-8, 8+s),
+            (8, self._h-8, 8+s, self._h-8), (8, self._h-8, 8, self._h-8-s),
+            (self._w-8, self._h-8, self._w-8-s, self._h-8), (self._w-8, self._h-8, self._w-8, self._h-8-s),
         ]
-        for idx, (x1, y1, x2, y2) in enumerate(coords):
-            self._canvas.coords(self._corner_lines[idx], x1, y1, x2, y2)
+        for i, (x1, y1, x2, y2) in enumerate(coords):
+            self._canvas.coords(self._corners[i], x1, y1, x2, y2)
 
-        # Update background grid lines
-        grid_margin = 40
-        self._canvas.coords(self._bg_lines[0], 0, self._cy, self._w, self._cy)
-        self._canvas.coords(self._bg_lines[1], self._cx, 0, self._cx, self._h)
-        self._canvas.coords(self._bg_lines[2], grid_margin, 0, grid_margin, self._h)
-        self._canvas.coords(self._bg_lines[3], self._w - grid_margin, 0, self._w - grid_margin, self._h)
-        self._canvas.coords(self._bg_lines[4], 0, grid_margin, self._w, grid_margin)
-        self._canvas.coords(self._bg_lines[5], 0, self._h - grid_margin, self._w, self._h - grid_margin)
-
-    # ── Real-Time Animation Loop ──────────────────────────────────────────────
+    # ─────────────────────────────────────────────────────────────────────────
+    # Main Animation Loop
+    # ─────────────────────────────────────────────────────────────────────────
 
     def _start_animation(self):
         self._animate()
 
     def _animate(self):
-        """Update visualizer telemetry, Arc Reactor rotation, and frequency bars."""
         if not self._anim_running:
             return
 
         t = time.time()
-        cfg = STATE_CFG[self._status]
-        color_bright = cfg['bright']
-        amp = cfg['amp']
-        speed = cfg['speed']
+        s = STATE[self._status]
+        amp   = s['amp']
+        speed = s['speed']
+        bright = s['bright']
+        mid    = s['mid']
+        dim    = s['dim']
 
-        cx, cy, br = self._cx, self._cy, self._base_r
-        max_h = br * 0.45
+        cx, cy, r = self._cx, self._cy, self._base_r
+        c = self._canvas
 
-        # ── 1. Telemetry Rings & Degrees ──
-        r_outer = br * 1.85
-        r_deg   = br * 1.68
-        r_inner = br * 1.48
+        # ── Draw hex grid ─────────────────────────────────────────────────────
+        self._draw_hex_grid(cx, cy, r)
 
-        self._canvas.coords(self._ring_outer_border, cx - r_outer, cy - r_outer, cx + r_outer, cy + r_outer)
-        self._canvas.coords(self._ring_degree_track, cx - r_deg, cy - r_deg, cx + r_deg, cy + r_deg)
-        self._canvas.coords(self._ring_inner_track,  cx - r_inner, cy - r_inner, cx + r_inner, cy + r_inner)
+        # ── Frequency bars ────────────────────────────────────────────────────
+        bar_inner_r = r * 0.95
+        bar_outer_r = r * 0.95
+        for i in range(NUM_BARS):
+            angle = (2 * math.pi * i / NUM_BARS) - math.pi / 2
+            target = amp * (0.35 + 0.65 * abs(math.sin(t * speed * 0.7 + self._phases[i])))
+            self._bar_vals[i] += (target - self._bar_vals[i]) * 0.22
+            h = self._bar_vals[i]
+            inner_r = bar_inner_r
+            outer_r = bar_outer_r + h
 
-        self._canvas.coords(self._deg_000, cx, cy - r_deg - 7)
-        self._canvas.coords(self._deg_090, cx + r_deg + 14, cy)
-        self._canvas.coords(self._deg_180, cx, cy + r_deg + 7)
-        self._canvas.coords(self._deg_270, cx - r_deg - 14, cy)
+            x1 = cx + inner_r * math.cos(angle)
+            y1 = cy + inner_r * math.sin(angle)
+            x2 = cx + outer_r * math.cos(angle)
+            y2 = cy + outer_r * math.sin(angle)
 
-        # ── 2. Rotating Outer Segmented Arcs ──
-        self._rot_outer += 0.018
-        arc_r = br * 1.62
-        for j, arc_id in enumerate(self._outer_arcs):
-            base_ang = self._rot_outer + j * (math.pi / 2)
-            span = 0.52
-            pts = []
-            steps = 8
-            for s in range(steps + 1):
-                ang = base_ang + (s / steps) * span
-                pts.append(cx + arc_r * math.cos(ang))
-                pts.append(cy + arc_r * math.sin(ang))
-            self._canvas.coords(arc_id, *pts)
-            self._canvas.itemconfig(arc_id, fill=cfg['dim'])
-
-        # ── 3. Counter-Rotating Inner Ticks ──
-        self._rot_inner -= 0.014
-        tick_r1 = br * 1.44
-        tick_r2 = br * 1.50
-        for k, tick_id in enumerate(self._inner_ticks):
-            ang = self._rot_inner + k * (2 * math.pi / 16)
-            self._canvas.coords(
-                tick_id,
-                cx + tick_r1 * math.cos(ang), cy + tick_r1 * math.sin(ang),
-                cx + tick_r2 * math.cos(ang), cy + tick_r2 * math.sin(ang)
-            )
-            self._canvas.itemconfig(tick_id, fill='#003850')
-
-        # ── 4. Equalizer Frequency Bars ──
-        for i, bar_id in enumerate(self._bars):
-            ang = (i / NUM_BARS) * 2 * math.pi - math.pi / 2
-            phase = self._phases[i]
-
-            if self._status == 'speaking':
-                h = amp * abs(
-                    0.50 * math.sin(t * speed + phase) +
-                    0.28 * math.sin(t * speed * 1.82 + phase * 1.3) +
-                    0.14 * math.sin(t * speed * 3.14 + phase * 0.7) +
-                    0.08 * math.sin(t * speed * 4.88 + phase * 2.1)
-                ) + random.uniform(0, 5)
-            elif self._status == 'listening':
-                h = amp * abs(
-                    0.65 * math.sin(t * speed + phase) +
-                    0.35 * math.sin(t * speed * 2.4 + phase * 1.5)
-                ) + random.uniform(0, 14)
-            elif self._status == 'thinking':
-                bar_ang = (i / NUM_BARS) * 2 * math.pi
-                sweep = (t * speed) % (2 * math.pi)
-                diff = abs(bar_ang - sweep) % (2 * math.pi)
-                if diff > math.pi:
-                    diff = 2 * math.pi - diff
-                h = amp * max(0.0, 1.0 - diff / 0.85) + 6 * abs(math.sin(t * 1.8 + phase))
+            intensity = h / max(amp, 1)
+            if intensity > 0.75:
+                col = bright
+            elif intensity > 0.4:
+                col = mid
             else:
-                h = amp * abs(math.sin(t * speed + phase))
+                col = dim
+            c.coords(self._freq_bars[i], x1, y1, x2, y2)
+            c.itemconfig(self._freq_bars[i], fill=col)
 
-            h = max(2, min(h, max_h))
-            cos_a = math.cos(ang)
-            sin_a = math.sin(ang)
+        # ── Rotation ──────────────────────────────────────────────────────────
+        self._rot1 += 0.008 * speed
+        self._rot2 -= 0.005 * speed
+        self._rot3 += 0.012 * speed
 
-            self._canvas.coords(
-                bar_id,
-                cx + br * cos_a, cy + br * sin_a,
-                cx + (br + h) * cos_a, cy + (br + h) * sin_a
-            )
-            intensity = h / max_h
-            self._canvas.itemconfig(bar_id, fill=self._lerp_color(cfg['dim'], color_bright, intensity))
+        # Outer arcs (6 evenly spaced, rotating)
+        arc_r = r * 1.32
+        for i, aid in enumerate(self._outer_arcs):
+            base_angle = (360 / 6) * i + math.degrees(self._rot1)
+            c.coords(aid, cx - arc_r, cy - arc_r, cx + arc_r, cy + arc_r)
+            c.itemconfig(aid, start=base_angle, extent=22, outline=mid)
 
-        # ── 5. Arc Reactor Core Rings & Nucleus Glow ──
-        ir = br - 4
-        self._canvas.coords(self._core_mask_outer, cx - ir, cy - ir, cx + ir, cy + ir)
-        self._canvas.coords(self._core_ring_gold,  cx - (br * 0.88), cy - (br * 0.88), cx + (br * 0.88), cy + (br * 0.88))
-        self._canvas.coords(self._core_ring_cyan,  cx - (br * 0.76), cy - (br * 0.76), cx + (br * 0.76), cy + (br * 0.76))
+        # Inner counter-rotating short dashes
+        inner_arc_r = r * 1.18
+        for i, aid in enumerate(self._inner_arcs):
+            base_angle = (360 / 12) * i + math.degrees(self._rot2)
+            c.coords(aid, cx - inner_arc_r, cy - inner_arc_r, cx + inner_arc_r, cy + inner_arc_r)
+            c.itemconfig(aid, start=base_angle, extent=5, outline=BLUE_RING)
 
-        # Core Glow Nucleus
-        pulse = 0.5 + 0.5 * math.sin(t * 2.8)
-        glow_r1 = br * 0.58
-        glow_r2 = br * 0.44
-        glow_r3 = br * 0.30
-        self._canvas.coords(self._core_glow_3, cx - glow_r1, cy - glow_r1, cx + glow_r1, cy + glow_r1)
-        self._canvas.coords(self._core_glow_2, cx - glow_r2, cy - glow_r2, cx + glow_r2, cy + glow_r2)
-        self._canvas.coords(self._core_glow_1, cx - glow_r3, cy - glow_r3, cx + glow_r3, cy + glow_r3)
+        # ── Concentric static rings ───────────────────────────────────────────
+        def oval(ox, oy, rad, item, **kw):
+            c.coords(item, ox - rad, oy - rad, ox + rad, oy + rad)
+            if kw:
+                c.itemconfig(item, **kw)
 
-        self._canvas.itemconfig(self._core_glow_1, fill=self._lerp_color('#000A14', cfg['core_color'], pulse * 0.75))
-        self._canvas.itemconfig(self._core_glow_2, fill=self._lerp_color('#00060E', cfg['glow'], pulse * 0.50))
+        oval(cx, cy, r * 1.45, self._ring_d1)
+        oval(cx, cy, r * 1.32, self._ring_d2)
+        oval(cx, cy, r * 1.18, self._ring_d3)
 
-        # Center typography
-        self._canvas.coords(self._center_title, cx, cy - (br * 0.10))
-        self._canvas.coords(self._center_status, cx, cy + (br * 0.12))
+        # Degree marks on outer ring
+        deg_r = r * 1.52
+        for i, dm in enumerate(self._deg_marks):
+            ang = (2 * math.pi * i / 12) - math.pi / 2
+            dx = cx + deg_r * math.cos(ang)
+            dy = cy + deg_r * math.sin(ang)
+            c.coords(dm, dx, dy)
+            c.itemconfig(dm, text=f"{i*30:03d}°")
 
-        # ── 6. Update Live Telemetry & Hardware Gauges ──
-        if t - self._last_telemetry_check > 1.8:
-            self._last_telemetry_check = t
-            if PSUTIL_AVAILABLE:
-                try:
-                    self._cpu_val = psutil.cpu_percent()
-                    self._ram_val = psutil.virtual_memory().percent
-                except Exception:
-                    pass
+        # ── Core circles ──────────────────────────────────────────────────────
+        core_mask_r = r * 0.68
+        oval(cx, cy, core_mask_r, self._core_outer_mask)
+        oval(cx, cy, core_mask_r * 0.90, self._core_glow3)
+        oval(cx, cy, core_mask_r * 0.76, self._core_glow2)
+        oval(cx, cy, core_mask_r * 0.60, self._core_glow1)
 
-        # Left Telemetry Coordinates
-        left_x = 42
-        top_y  = max(55, cy - (br * 0.9))
-        self._canvas.coords(self._tel_left_box[0], left_x, top_y)
-        self._canvas.coords(self._tel_left_box[1], left_x, top_y + 20)
-        self._canvas.coords(self._tel_left_box[2], left_x, top_y + 46)
-        self._canvas.coords(self._tel_left_box[3], left_x, top_y + 72)
-        self._canvas.coords(self._tel_left_box[4], left_x, top_y + 88)
+        pulse = 0.5 + 0.5 * math.sin(t * speed * 0.4)
+        gold_r = core_mask_r * (0.30 + 0.04 * pulse)
+        oval(cx, cy, gold_r, self._core_gold)
+        oval(cx, cy, core_mask_r * 0.52, self._core_ring, outline=bright if self._status != 'idle' else CYAN_DIM)
 
-        self._canvas.itemconfig(self._tel_left_box[1], text=f"CPU: {self._cpu_val:.0f}%")
-        self._canvas.itemconfig(self._tel_left_box[2], text=f"RAM: {self._ram_val:.0f}%")
+        # ── Center text ───────────────────────────────────────────────────────
+        name_font_size = max(14, int(r * 0.14))
+        c.coords(self._txt_name, cx, cy - r * 0.08)
+        c.itemconfig(self._txt_name, font=('Consolas', name_font_size, 'bold'), fill=bright)
+        c.coords(self._txt_status, cx, cy + r * 0.10)
+        c.itemconfig(self._txt_status, text=s['label'])
+        c.coords(self._txt_sub, cx, cy + r * 0.20)
+        c.itemconfig(self._txt_sub, text=s['status'])
 
-        # CPU/RAM mini progress bars
-        gauge_w = 90
-        self._canvas.coords(self._gauge_cpu_bg, left_x, top_y + 32, left_x + gauge_w, top_y + 32)
-        self._canvas.coords(self._gauge_cpu_fill, left_x, top_y + 32, left_x + (gauge_w * (self._cpu_val / 100)), top_y + 32)
+        # ── Left panel ────────────────────────────────────────────────────────
+        self._draw_left_panel(cx, cy, r, t)
 
-        self._canvas.coords(self._gauge_ram_bg, left_x, top_y + 58, left_x + gauge_w, top_y + 58)
-        self._canvas.coords(self._gauge_ram_fill, left_x, top_y + 58, left_x + (gauge_w * (self._ram_val / 100)), top_y + 58)
+        # ── Right panel ───────────────────────────────────────────────────────
+        self._draw_right_panel(cx, cy, r)
 
-        # Right Diagnostics Coordinates
-        right_x = self._w - 42
-        self._canvas.coords(self._tel_right_box[0], right_x, top_y)
-        self._canvas.coords(self._tel_right_box[1], right_x, top_y + 20)
-        self._canvas.coords(self._tel_right_box[2], right_x, top_y + 36)
-        self._canvas.coords(self._tel_right_box[3], right_x, top_y + 54)
-        self._canvas.coords(self._tel_right_box[4], right_x, top_y + 70)
+        # ── Bottom dialogue panel ─────────────────────────────────────────────
+        self._draw_dialogue_panel()
 
-        # ── 7. Update Dual Oscilloscope Waves ──
-        osc_w = min(self._w * 0.72, 600)
-        start_x = cx - osc_w / 2
-        base_y  = self._h - 32
-        pts_1, pts_2 = [], []
-        for p in range(self._osc_points):
-            px = start_x + p * (osc_w / (self._osc_points - 1))
-            val_1 = math.sin(t * speed * 1.3 + p * 0.24) * (amp * 0.24)
-            val_2 = math.cos(t * speed * 0.8 + p * 0.18) * (amp * 0.14)
-            pts_1.extend([px, base_y + val_1])
-            pts_2.extend([px, base_y + 6 + val_2])
+        # ── Oscilloscope ──────────────────────────────────────────────────────
+        self._draw_oscilloscope(t)
 
-        self._canvas.coords(self._osc_line_1, *pts_1)
-        self._canvas.coords(self._osc_line_2, *pts_2)
-        self._canvas.itemconfig(self._osc_line_1, fill=cfg['mid'])
+        # ── Telemetry update (every 60 frames) ───────────────────────────────
+        self._tel_tick += 1
+        if self._tel_tick >= 60 and PSUTIL_AVAILABLE:
+            self._tel_tick = 0
+            self._cpu = psutil.cpu_percent(interval=None)
+            self._ram = psutil.virtual_memory().percent
 
-        # Update clock
-        self._hud_time.configure(text=datetime.now().strftime("%H:%M:%S"))
+        # ── Clock update ──────────────────────────────────────────────────────
+        now = datetime.now().strftime("%H:%M:%S")
+        c.itemconfig(self._lp_time, text=f"TIME   : {now}")
+        c.itemconfig(self._dp_time, text=now)
 
-        # Schedule next animation frame
+        # Schedule next frame
         self.root.after(1000 // FPS, self._animate)
 
-    @staticmethod
-    def _lerp_color(hex1: str, hex2: str, t: float) -> str:
-        """Linear interpolate between two hex color codes."""
-        t = max(0.0, min(1.0, t))
-        r1, g1, b1 = int(hex1[1:3], 16), int(hex1[3:5], 16), int(hex1[5:7], 16)
-        r2, g2, b2 = int(hex2[1:3], 16), int(hex2[3:5], 16), int(hex2[5:7], 16)
-        r = int(r1 + (r2 - r1) * t)
-        g = int(g1 + (g2 - g1) * t)
-        b = int(b1 + (b2 - b1) * t)
-        return f'#{r:02x}{g:02x}{b:02x}'
+    def _draw_hex_grid(self, cx, cy, r):
+        """Draw a subtle hexagonal grid in the background (static, redrawn each frame for glow)."""
+        c = self._canvas
+        c.delete("hexgrid")
+        # Only draw hexes within canvas bounds
+        w, h = self._w, self._h
+        hs = HEX_SIZE
+        rows = int(h / (hs * 1.5)) + 2
+        cols = int(w / (hs * math.sqrt(3))) + 2
+        hex_w = hs * math.sqrt(3)
 
-    # ── Window Mode & Controls ────────────────────────────────────────────────
+        for row in range(-1, rows):
+            for col in range(-1, cols):
+                hx = col * hex_w + (hex_w / 2 if row % 2 else 0)
+                hy = row * hs * 1.5
 
-    def _toggle_fullscreen(self):
-        self._fullscreen = not self._fullscreen
-        self.root.attributes('-fullscreen', self._fullscreen)
-        self.add_system_message(f"Display Mode: {'FULLSCREEN MATRIX' if self._fullscreen else 'WINDOWED CONSOLE'}")
+                # Distance from center — fade outer hexes
+                dist = math.hypot(hx - cx, hy - cy)
+                max_dist = r * 2.2
+                if dist > max_dist:
+                    continue
 
-    def _exit_fullscreen(self):
-        if self._fullscreen:
-            self._fullscreen = False
-            self.root.attributes('-fullscreen', False)
-
-    def _toggle_topmost(self):
-        current = self.root.attributes('-topmost')
-        self.root.attributes('-topmost', not current)
-        self.add_system_message(f"HUD Pin Mode: {'ENGAGED' if not current else 'RELEASED'}")
-
-    def bring_to_front(self):
-        """Restore, deiconify, and lift ARIA window into active focus (thread-safe)."""
-        def _lift():
-            try:
-                self.root.deiconify()
-                self.root.attributes('-topmost', True)
-                self.root.lift()
-                self.root.focus_force()
-            except Exception:
-                pass
-        self.root.after(0, _lift)
-
-    def toggle_visibility(self):
-        """Toggle window show/hide from global shortcut (thread-safe)."""
-        def _toggle():
-            try:
-                if self.root.state() == 'withdrawn' or self.root.state() == 'iconic':
-                    self.root.deiconify()
-                    self.root.attributes('-topmost', True)
-                    self.root.lift()
-                    self.root.focus_force()
-                elif self.root.winfo_viewable() and self.root.focus_displayof():
-                    self.root.iconify()
+                alpha_factor = max(0, 1 - dist / max_dist)
+                # Colour based on distance: brighter near center
+                if dist < r * 0.85:
+                    col_hex = "#0A2030"
+                elif dist < r * 1.3:
+                    col_hex = "#061828"
                 else:
-                    self.root.deiconify()
-                    self.root.attributes('-topmost', True)
-                    self.root.lift()
-                    self.root.focus_force()
-            except Exception:
-                pass
-        self.root.after(0, _toggle)
+                    col_hex = "#040F1A"
 
-    # ── Public State & Message API (Thread-Safe) ──────────────────────────────
+                pts = []
+                for k in range(6):
+                    ang = math.radians(60 * k + 30)
+                    pts.extend([hx + hs * 0.95 * math.cos(ang), hy + hs * 0.95 * math.sin(ang)])
 
-    def set_status(self, status: str, custom_text: str = None):
-        """Update system state — drives Arc Reactor frequency animation."""
-        self._status = status
-        cfg = STATE_CFG.get(status, STATE_CFG['idle'])
-        label = custom_text or cfg['label']
-        hotkey = self.config.get('hotkey', 'F2').upper()
+                c.create_polygon(*pts, outline=col_hex, fill='', tags="hexgrid", width=1)
 
-        btn_labels = {
-            'idle':      f"◉  ACTIVATE VOICE INTERFACE  [{hotkey}]",
-            'listening': "◎  LISTENING... (SPEAK COMMAND)",
-            'thinking':  "◈  NEURAL SYNTHESIS IN PROGRESS...",
-            'speaking':  "◉  TRANSMITTING VOCAL MATRIX...",
-            'error':     "⚠  TELEMETRY FAULT — RETRY",
-        }
-        btn_txt = btn_labels.get(status, f"◉  ACTIVATE VOICE INTERFACE  [{hotkey}]")
+        # Keep hex grid below everything else
+        c.tag_lower("hexgrid")
 
-        btn_colors = {
-            'idle':      ('#020B1A', CYAN_CORE),
-            'listening': ('#001810', '#00FF99'),
-            'thinking':  ('#1A1200', '#FFB800'),
-            'speaking':  ('#001524', '#00F0FF'),
-            'error':     ('#1C0508', ALERT_RED),
-        }
-        btn_bg, btn_fg = btn_colors.get(status, ('#020B1A', CYAN_CORE))
+    def _draw_left_panel(self, cx, cy, r, t):
+        c = self._canvas
+        pw = max(140, min(200, (cx - r * 1.55) * 0.9))
+        px = 12
+        py = max(55, int(cy - r * 0.9))
+        ph = int(r * 1.8)
 
-        def _update():
-            self._canvas.itemconfig(self._center_status, text=label, fill=cfg['bright'])
-            self._activate_btn.configure(text=btn_txt, bg=btn_bg, fg=btn_fg)
-            self._hud_tag.configure(text=f"● {cfg['sub_status']}", fg=cfg['bright'])
+        # Border
+        bpts = [(px, py, px + pw, py), (px, py, px, py + ph),
+                (px + pw, py, px + pw, py + ph), (px, py + ph, px + pw, py + ph)]
+        for i, (x1, y1, x2, y2) in enumerate(bpts):
+            c.coords(self._lp_border[i], x1, y1, x2, y2)
 
-        self.root.after(0, _update)
+        lx = px + 10
+        line_h = 16
 
-    def add_user_message(self, text: str):
-        """Display user voice command in the dialogue HUD."""
-        def _update():
-            user_name = self.config.get('user_name', 'Madhav').upper()
-            self._dialogue_lbl.configure(text=f"{user_name}: \"{text}\"", fg=CYAN_NEON)
-        self.root.after(0, _update)
+        c.coords(self._lp_title, lx, py + 10)
+        c.coords(self._lp_cpu_l, lx, py + 10 + line_h * 2)
+        c.coords(self._lp_cpu_v, lx + 52, py + 10 + line_h * 2)
+        c.itemconfig(self._lp_cpu_v, text=f"{self._cpu:.0f}%")
+
+        # CPU bar
+        bx1, by1 = lx, py + 10 + line_h * 3
+        bx2, by2 = px + pw - 10, by1 + 6
+        c.coords(self._lp_cpu_bg, bx1, by1, bx2, by2)
+        fill_w = bx1 + (bx2 - bx1) * self._cpu / 100
+        c.coords(self._lp_cpu_fg, bx1, by1, fill_w, by2)
+
+        c.coords(self._lp_ram_l, lx, py + 10 + line_h * 4)
+        c.coords(self._lp_ram_v, lx + 52, py + 10 + line_h * 4)
+        c.itemconfig(self._lp_ram_v, text=f"{self._ram:.0f}%")
+
+        bx1, by1 = lx, py + 10 + line_h * 5
+        bx2, by2 = px + pw - 10, by1 + 6
+        c.coords(self._lp_ram_bg, bx1, by1, bx2, by2)
+        fill_w = bx1 + (bx2 - bx1) * self._ram / 100
+        c.coords(self._lp_ram_fg, bx1, by1, fill_w, by2)
+
+        c.coords(self._lp_audio, lx, py + 10 + line_h * 6)
+        c.coords(self._lp_link,  lx, py + 10 + line_h * 7)
+        c.coords(self._lp_time,  lx, py + 10 + line_h * 8)
+
+    def _draw_right_panel(self, cx, cy, r):
+        c = self._canvas
+        pw = max(140, min(200, (self._w - cx - r * 1.55) * 0.9))
+        px = self._w - 12 - pw
+        py = max(55, int(cy - r * 0.9))
+        ph = int(r * 1.8)
+
+        bpts = [(px, py, px + pw, py), (px, py, px, py + ph),
+                (px + pw, py, px + pw, py + ph), (px, py + ph, px + pw, py + ph)]
+        for i, (x1, y1, x2, y2) in enumerate(bpts):
+            c.coords(self._rp_border[i], x1, y1, x2, y2)
+
+        rx = self._w - 22
+        line_h = 15
+        c.coords(self._rp_title, rx, py + 10)
+        c.coords(self._rp_model, rx, py + 10 + line_h * 2)
+        c.coords(self._rp_voice, rx, py + 10 + line_h * 3)
+        c.coords(self._rp_stt,   rx, py + 10 + line_h * 4)
+        c.coords(self._rp_lat,   rx, py + 10 + line_h * 5)
+        c.coords(self._rp_sec,   rx, py + 10 + line_h * 6)
+
+    def _draw_dialogue_panel(self):
+        c = self._canvas
+        margin = 12
+        px = margin
+        pw = self._w - margin * 2
+        ph = 70
+        py = self._h - ph - 4
+
+        c.coords(self._dp_bg, px, py, px + pw, py + ph)
+        c.coords(self._dp_divider, px, py, px + pw, py)
+        c.coords(self._dp_src,  px + 12, py + 10)
+        c.itemconfig(self._dp_src, text=f"● {self._last_source}")
+        c.coords(self._dp_time, px + pw - 12, py + 10)
+        c.coords(self._dp_text, px + 12, py + 28)
+        c.itemconfig(self._dp_text, text=self._last_text, width=pw - 24)
+
+    def _draw_oscilloscope(self, t):
+        c = self._canvas
+        s = STATE[self._status]
+        pts1, pts2 = [], []
+        npts = 60
+        oy = self._h - 78
+        for i in range(npts):
+            x = self._w * i / (npts - 1)
+            amp1 = s['amp'] * 0.15
+            amp2 = s['amp'] * 0.08
+            y1 = oy + amp1 * math.sin(t * s['speed'] * 0.5 + i * 0.25)
+            y2 = oy + amp2 * math.sin(t * s['speed'] * 0.3 + i * 0.18 + 1.2)
+            pts1.extend([x, y1])
+            pts2.extend([x, y2])
+        if len(pts1) >= 4:
+            c.coords(self._osc1, *pts1)
+            c.coords(self._osc2, *pts2)
+        c.itemconfig(self._osc1, fill=s['mid'])
+        c.itemconfig(self._osc2, fill=s['dim'])
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Public API (called from main.py)
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def set_status(self, status: str):
+        if status in STATE:
+            self._status = status
+            # Flash colour on activate button
+            if status == 'listening':
+                self._activate_btn.configure(fg='#00FF99', text="● LISTENING — SPEAK NOW...")
+            elif status == 'thinking':
+                self._activate_btn.configure(fg=GOLD, text="◎ PROCESSING NEURAL QUERY...")
+            elif status == 'speaking':
+                self._activate_btn.configure(fg=CYAN_BRIGHT, text="▶ AUDIO OUTPUT ACTIVE...")
+            else:
+                hk = self.config.get('hotkey', 'P').upper()
+                self._activate_btn.configure(fg=CYAN_BRIGHT, text=f"◉   ACTIVATE VOICE INTERFACE   [ {hk} ]")
 
     def add_aria_message(self, text: str):
-        """Display ARIA vocal response in the dialogue HUD."""
-        def _update():
-            self._dialogue_lbl.configure(text=f"ARIA: {text}", fg=TEXT_BRIGHT)
-        self.root.after(0, _update)
+        self._last_source = "ARIA"
+        self._last_text = text.upper() if len(text) < 80 else text
+        self._canvas.itemconfig(self._dp_src, fill=CYAN_BRIGHT)
+
+    def add_user_message(self, text: str):
+        self._last_source = "MADHAV"
+        self._last_text = text
+        self._canvas.itemconfig(self._dp_src, fill=GOLD)
 
     def add_system_message(self, text: str):
-        """Display telemetry system alert in the dialogue HUD."""
-        def _update():
-            self._dialogue_lbl.configure(text=f"SYSTEM // {text}", fg=TEXT_MID)
-        self.root.after(0, _update)
+        self._last_source = "SYSTEM"
+        self._last_text = text
+        self._canvas.itemconfig(self._dp_src, fill=TEXT_MID)
 
-    # ── Practical & Intuitive Settings Console ────────────────────────────────
+    def bring_to_front(self):
+        self.root.deiconify()
+        self.root.lift()
+        self.root.attributes('-topmost', True)
+        self.root.focus_force()
 
-    def _open_settings(self):
-        """Practical, intuitive JARVIS system settings console with live voice testing."""
-        win = tk.Toplevel(self.root)
-        win.title("SYSTEM CONFIGURATION // ARIA")
-        win.geometry("520x620")
-        win.minsize(480, 540)
-        win.configure(bg=BG)
-        win.attributes('-topmost', True)
-        win.grab_set()
+    def toggle_visibility(self):
+        if self.root.state() == 'iconic':
+            self.root.deiconify()
+            self.root.lift()
+            self.root.attributes('-topmost', True)
+        else:
+            self.root.iconify()
 
-        # Modal Header
-        top_hdr = tk.Frame(win, bg=BG)
-        top_hdr.pack(fill='x', padx=24, pady=(18, 4))
+    def run(self):
+        self.root.mainloop()
 
-        tk.Label(
-            top_hdr, text="⚙  STARK INDUSTRIES // SYSTEM CONFIGURATION",
-            bg=BG, fg=CYAN_CORE, font=('Consolas', 12, 'bold')
-        ).pack(anchor='w')
-        tk.Label(
-            top_hdr, text="Configure Operator Identity, Gemini Neural Keys, and Voice Profiles.",
-            bg=BG, fg=TEXT_MUTED, font=('Consolas', 8)
-        ).pack(anchor='w')
-
-        tk.Frame(win, bg=CYAN_DARK, height=1).pack(fill='x', padx=20, pady=8)
-
-        # Scrollable Settings Container
-        canvas_settings = tk.Canvas(win, bg=BG, bd=0, highlightthickness=0)
-        scrollbar = tk.Scrollbar(win, orient="vertical", command=canvas_settings.yview, bg=BG)
-        scroll_frame = tk.Frame(canvas_settings, bg=BG)
-
-        scroll_frame.bind(
-            "<Configure>",
-            lambda e: canvas_settings.configure(scrollregion=canvas_settings.bbox("all"))
-        )
-        canvas_settings.create_window((0, 0), window=scroll_frame, anchor="nw", width=470)
-        canvas_settings.configure(yscrollcommand=scrollbar.set)
-
-        canvas_settings.pack(side="left", fill="both", expand=True, padx=(20, 0))
-        scrollbar.pack(side="right", fill="y", padx=(0, 10))
-
-        # ── Form Helper Functions ──
-        def section_title(text):
-            f = tk.Frame(scroll_frame, bg=BG)
-            f.pack(fill='x', pady=(12, 4))
-            tk.Label(f, text=f"◈ {text}", bg=BG, fg=CYAN_NEON, font=('Consolas', 9, 'bold')).pack(anchor='w')
-            tk.Frame(f, bg='#001E2E', height=1).pack(fill='x', pady=2)
-
-        def input_field(label_text, var, show=None, note=""):
-            f = tk.Frame(scroll_frame, bg=BG)
-            f.pack(fill='x', pady=4)
-            tk.Label(f, text=label_text, bg=BG, fg=TEXT_MID, font=('Consolas', 8, 'bold')).pack(anchor='w')
-            e = tk.Entry(
-                f, textvariable=var,
-                bg='#030C1A', fg=CYAN_CORE,
-                insertbackground=CYAN_CORE,
-                relief='flat', font=('Consolas', 10),
-                show=show or ''
-            )
-            e.pack(fill='x', ipady=4, pady=2)
-            if note:
-                tk.Label(f, text=note, bg=BG, fg=TEXT_MUTED, font=('Consolas', 7)).pack(anchor='w')
-            return e
-
-        # Form Variables
-        user_var    = tk.StringVar(value=self.config.get('user_name', 'Madhav'))
-        api_var     = tk.StringVar(value=self.config.get('gemini_api_key', ''))
-        hotkey_var  = tk.StringVar(value=self.config.get('hotkey', 'P'))
-        summon_var  = tk.StringVar(value=self.config.get('summon_hotkey', 'ctrl+space'))
-        city_var    = tk.StringVar(value=self.config.get('weather_city', ''))
-        speed_var   = tk.IntVar(value=self.config.get('voice_speed', 175))
-        voice_var   = tk.StringVar(value=self.config.get('voice_name', 'en-US-GuyNeural'))
-        lang_var    = tk.StringVar(value=self.config.get('stt_language', 'en-IN'))
-
-        # ── 1. Operator Identity ──
-        section_title("OPERATOR PROFILE")
-        input_field("OPERATOR NAME", user_var, note="Your name for personalized voice greetings & interactions.")
-
-        # ── 2. Neural AI Engine ──
-        section_title("GEMINI NEURAL AI CORE")
-        api_entry = input_field("GEMINI API KEY", api_var, show='*', note="Free API key from aistudio.google.com/apikey")
-
-        # ── 3. Voice Matrix & Audio Profile ──
-        section_title("MALE NEURAL VOICE MATRIX")
-        vf = tk.Frame(scroll_frame, bg=BG)
-        vf.pack(fill='x', pady=4)
-        tk.Label(vf, text="SELECT VOICE PROFILE", bg=BG, fg=TEXT_MID, font=('Consolas', 8, 'bold')).pack(anchor='w')
-
-        voice_options = [
-            ("en-US-GuyNeural", "Guy (American Male - Warm & Charismatic Best Friend)"),
-            ("en-US-ChristopherNeural", "Christopher (American Male - Smooth & Confident)"),
-            ("en-GB-RyanNeural", "Ryan (British Male - Classic Jarvis Style)"),
-            ("en-US-BrianNeural", "Brian (American Male - Casual & Friendly)"),
-            ("en-US-EricNeural", "Eric (American Male - Crisp & Clear)"),
-        ]
-
-        voice_menu = tk.OptionMenu(vf, voice_var, *[v[0] for v in voice_options])
-        voice_menu.config(
-            bg='#030C1A', fg=CYAN_NEON,
-            activebackground='#061628', activeforeground=CYAN_CORE,
-            relief='flat', highlightthickness=0,
-            font=('Consolas', 9), cursor='hand2'
-        )
-        voice_menu["menu"].config(bg='#030C1A', fg=CYAN_NEON, font=('Consolas', 9))
-        voice_menu.pack(fill='x', pady=2)
-
-        # Voice Test Button
-        def _test_voice_sample():
-            chosen_voice = voice_var.get().strip() or "en-US-GuyNeural"
-            name = user_var.get().strip() or "Madhav"
-            sample_text = f"Hey {name}! This is how my voice sounds. All neural systems are ready to roll!"
-
-            def _play_sample():
-                try:
-                    import tempfile
-                    with tempfile.NamedTemporaryFile(suffix='.mp3', delete=False) as f:
-                        temp_path = f.name
-                    async def _gen():
-                        comm = edge_tts.Communicate(sample_text, voice=chosen_voice)
-                        await comm.save(temp_path)
-                    loop = asyncio.new_event_loop()
-                    loop.run_until_complete(_gen())
-                    loop.close()
-                    pygame.mixer.music.load(temp_path)
-                    pygame.mixer.music.play()
-                    while pygame.mixer.music.get_busy():
-                        time.sleep(0.05)
-                    pygame.mixer.music.unload()
-                    if os.path.exists(temp_path):
-                        os.remove(temp_path)
-                except Exception as ex:
-                    print(f"[Settings] Test voice error: {ex}")
-
-            threading.Thread(target=_play_sample, daemon=True).start()
-
-        test_btn = tk.Button(
-            vf, text="🔊  LISTEN TO VOICE SAMPLE",
-            command=_test_voice_sample,
-            bg='#002438', fg=CYAN_CORE,
-            activebackground='#003C58', activeforeground='#FFFFFF',
-            relief='flat', bd=0, font=('Consolas', 8, 'bold'),
-            cursor='hand2', pady=4
-        )
-        test_btn.pack(anchor='w', pady=(3, 6))
-
-        # Speed Slider
-        sf = tk.Frame(scroll_frame, bg=BG)
-        sf.pack(fill='x', pady=4)
-        tk.Label(sf, text="VOCAL SPEED CADENCE", bg=BG, fg=TEXT_MID, font=('Consolas', 8, 'bold')).pack(anchor='w')
-        slider_row = tk.Frame(sf, bg=BG)
-        slider_row.pack(fill='x')
-        tk.Scale(
-            slider_row, variable=speed_var, from_=110, to=240,
-            orient='horizontal', bg=BG, fg=CYAN_CORE,
-            troughcolor='#001A2A', highlightthickness=0,
-            font=('Consolas', 8), length=350
-        ).pack(side='left')
-        tk.Label(slider_row, textvariable=speed_var, bg=BG, fg=CYAN_MID, font=('Consolas', 9), width=4).pack(side='left')
-
-        # ── 4. Speech Recognition Language ──
-        section_title("SPEECH RECOGNITION (STT)")
-        lf = tk.Frame(scroll_frame, bg=BG)
-        lf.pack(fill='x', pady=4)
-        tk.Label(lf, text="MICROPHONE ACCENT / LANGUAGE", bg=BG, fg=TEXT_MID, font=('Consolas', 8, 'bold')).pack(anchor='w')
-        lang_options = [
-            ("en-IN", "Indian English / Hinglish (en-IN - Recommended)"),
-            ("en-US", "American English (en-US)"),
-            ("en-GB", "British English (en-GB)"),
-        ]
-        lang_menu = tk.OptionMenu(lf, lang_var, *[l[0] for l in lang_options])
-        lang_menu.config(
-            bg='#030C1A', fg=CYAN_NEON,
-            activebackground='#061628', activeforeground=CYAN_CORE,
-            relief='flat', highlightthickness=0,
-            font=('Consolas', 9), cursor='hand2'
-        )
-        lang_menu["menu"].config(bg='#030C1A', fg=CYAN_NEON, font=('Consolas', 9))
-        lang_menu.pack(fill='x', pady=2)
-
-        # ── 5. Input Triggers & Regional Telemetry ──
-        section_title("HOTKEYS & LOCATION")
-        input_field("VOICE ACTIVATION HOTKEY", hotkey_var, note="Press to speak immediately (e.g. P, F2, Space)")
-        input_field("SUMMON / TOGGLE WINDOW SHORTCUT", summon_var, note="Global shortcut to show/hide ARIA from anywhere (e.g. ctrl+space, alt+space)")
-        input_field("DEFAULT WEATHER REGION", city_var, note="City name for live atmospheric updates (e.g. Delhi, Mumbai)")
-
-        # ── Bottom Action Buttons ──
-        btn_action_frame = tk.Frame(win, bg=BG)
-        btn_action_frame.pack(fill='x', padx=20, pady=12)
-
-        def _save():
-            self.config['user_name']      = user_var.get().strip() or 'Madhav'
-            self.config['gemini_api_key'] = api_var.get().strip()
-            self.config['hotkey']         = hotkey_var.get().strip() or 'P'
-            self.config['summon_hotkey']  = summon_var.get().strip() or 'ctrl+space'
-            self.config['stt_language']   = lang_var.get().strip() or 'en-IN'
-            self.config['weather_city']   = city_var.get().strip()
-            self.config['voice_name']     = voice_var.get().strip() or 'en-US-GuyNeural'
-            self.config['voice_speed']    = speed_var.get()
-
-            # Update header display
-            self._header_user_lbl.configure(text=f"OPERATOR: {self.config['user_name'].upper()}  |  QUANTUM NEURAL CORE: ONLINE")
-            self._activate_btn.configure(text=f"◉  ACTIVATE VOICE INTERFACE  [{self.config['hotkey'].upper()}]")
-
-            if self.on_api_key_save:
-                self.on_api_key_save(self.config)
-
-            win.destroy()
-            self.add_system_message("Configuration synchronized successfully.")
-
-        tk.Button(
-            btn_action_frame, text="▶  SAVE & SYNCHRONIZE",
-            command=_save,
-            bg='#002840', fg=CYAN_CORE,
-            activebackground='#004870', activeforeground='#FFFFFF',
-            relief='flat', bd=0, font=('Consolas', 10, 'bold'),
-            cursor='hand2', pady=8
-        ).pack(side='left', fill='x', expand=True, padx=(0, 6))
-
-        tk.Button(
-            btn_action_frame, text="✕  CANCEL",
-            command=win.destroy,
-            bg='#030B18', fg=TEXT_MUTED,
-            activebackground='#081828', activeforeground=TEXT_MID,
-            relief='flat', bd=0, font=('Consolas', 10),
-            cursor='hand2', pady=8, width=10
-        ).pack(side='right')
+    # ─────────────────────────────────────────────────────────────────────────
+    # Internal Callbacks
+    # ─────────────────────────────────────────────────────────────────────────
 
     def _on_mic_click(self):
         if self.on_listen_request:
             threading.Thread(target=self.on_listen_request, daemon=True).start()
 
-    def _reset_memory(self):
-        if self.on_reset_memory:
-            self.on_reset_memory()
-        self.add_system_message("Neural conversation history cleared.")
-
     def _on_close(self):
         self._anim_running = False
         self.root.destroy()
 
-    # ── Event Loop ────────────────────────────────────────────────────────────
+    def _toggle_fullscreen(self):
+        self._fullscreen = not self._fullscreen
+        self.root.attributes('-fullscreen', self._fullscreen)
 
-    def run(self):
-        self.root.mainloop()
+    def _exit_fullscreen(self):
+        self._fullscreen = False
+        self.root.attributes('-fullscreen', False)
 
-    def destroy(self):
-        self._anim_running = False
-        try:
-            self.root.destroy()
-        except Exception:
-            pass
+    def _toggle_topmost(self):
+        cur = self.root.attributes('-topmost')
+        self.root.attributes('-topmost', not cur)
+
+    def _reset_memory(self):
+        if self.on_reset_memory:
+            self.on_reset_memory()
+        self.add_system_message("Conversation memory cleared — session reset.")
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Settings Modal
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def _open_settings(self):
+        win = tk.Toplevel(self.root)
+        win.title("ARIA — SYSTEM CONFIGURATION")
+        win.configure(bg=BG)
+        win.geometry("520x700")
+        win.resizable(False, True)
+        win.grab_set()
+
+        # Header
+        tk.Label(win, text="◈  SYSTEM CONFIGURATION CONSOLE",
+                 bg=BG, fg=CYAN_BRIGHT, font=('Consolas', 11, 'bold')).pack(pady=(14, 2))
+        tk.Frame(win, bg=PANEL_EDGE, height=1).pack(fill='x', padx=16)
+
+        # Scrollable content
+        outer = tk.Frame(win, bg=BG)
+        outer.pack(fill='both', expand=True, padx=16, pady=8)
+        canvas_s = tk.Canvas(outer, bg=BG, bd=0, highlightthickness=0)
+        scrollbar = tk.Scrollbar(outer, orient='vertical', command=canvas_s.yview, bg=BG)
+        scroll_frame = tk.Frame(canvas_s, bg=BG)
+        scroll_frame.bind("<Configure>", lambda e: canvas_s.configure(scrollregion=canvas_s.bbox("all")))
+        canvas_s.create_window((0, 0), window=scroll_frame, anchor='nw')
+        canvas_s.configure(yscrollcommand=scrollbar.set)
+        canvas_s.pack(side='left', fill='both', expand=True)
+        scrollbar.pack(side='right', fill='y')
+        canvas_s.bind("<MouseWheel>", lambda e: canvas_s.yview_scroll(-1 * (e.delta // 120), "units"))
+
+        def section_title(text):
+            tk.Frame(scroll_frame, bg=PANEL_EDGE, height=1).pack(fill='x', pady=(12, 4))
+            tk.Label(scroll_frame, text=f"◈  {text}", bg=BG, fg=CYAN_MID,
+                     font=('Consolas', 8, 'bold')).pack(anchor='w')
+
+        def field(label, var, note="", show=None):
+            f = tk.Frame(scroll_frame, bg=BG)
+            f.pack(fill='x', pady=3)
+            tk.Label(f, text=label, bg=BG, fg=TEXT_MID, font=('Consolas', 8, 'bold')).pack(anchor='w')
+            e = tk.Entry(f, textvariable=var, bg='#030C1A', fg=CYAN_BRIGHT, insertbackground=CYAN_BRIGHT,
+                         relief='flat', bd=0, font=('Consolas', 9), highlightthickness=1,
+                         highlightbackground=CYAN_DIM, highlightcolor=CYAN_BRIGHT,
+                         show=show or '')
+            e.pack(fill='x', ipady=5)
+            if note:
+                tk.Label(f, text=note, bg=BG, fg=TEXT_DIM, font=('Consolas', 7), wraplength=460).pack(anchor='w')
+            return e
+
+        # Variables
+        user_var   = tk.StringVar(value=self.config.get('user_name', 'Madhav'))
+        api_var    = tk.StringVar(value=self.config.get('gemini_api_key', ''))
+        hk_var     = tk.StringVar(value=self.config.get('hotkey', 'P'))
+        summon_var = tk.StringVar(value=self.config.get('summon_hotkey', 'ctrl+space'))
+        city_var   = tk.StringVar(value=self.config.get('weather_city', ''))
+        speed_var  = tk.IntVar(value=self.config.get('voice_speed', 175))
+        voice_var  = tk.StringVar(value=self.config.get('voice_name', 'en-GB-RyanNeural'))
+        lang_var   = tk.StringVar(value=self.config.get('stt_language', 'en-IN'))
+
+        section_title("OPERATOR PROFILE")
+        field("OPERATOR NAME", user_var, "Your name for personalized greetings.")
+
+        section_title("GEMINI NEURAL AI CORE")
+        field("GEMINI API KEY", api_var, "Free key from aistudio.google.com/apikey", show='*')
+
+        section_title("NEURAL VOICE MATRIX")
+        vf = tk.Frame(scroll_frame, bg=BG)
+        vf.pack(fill='x', pady=3)
+        tk.Label(vf, text="VOICE PROFILE", bg=BG, fg=TEXT_MID, font=('Consolas', 8, 'bold')).pack(anchor='w')
+        voice_opts = ["en-GB-RyanNeural", "en-US-GuyNeural", "en-US-ChristopherNeural",
+                      "en-US-BrianNeural", "en-US-EricNeural"]
+        vm = tk.OptionMenu(vf, voice_var, *voice_opts)
+        vm.config(bg='#030C1A', fg=CYAN_BRIGHT, activebackground='#061628',
+                  activeforeground=CYAN_BRIGHT, relief='flat', highlightthickness=0,
+                  font=('Consolas', 9), cursor='hand2')
+        vm["menu"].config(bg='#030C1A', fg=CYAN_BRIGHT, font=('Consolas', 9))
+        vm.pack(fill='x', pady=2)
+
+        def _test_voice():
+            name = user_var.get().strip() or "Madhav"
+            v = voice_var.get()
+            txt = f"Hey {name}! ARIA online — all neural systems nominal and ready."
+            def _play():
+                try:
+                    import tempfile as tf
+                    with tf.NamedTemporaryFile(suffix='.mp3', delete=False) as fp:
+                        tmp = fp.name
+                    async def _gen():
+                        await edge_tts.Communicate(txt, voice=v).save(tmp)
+                    loop = asyncio.new_event_loop()
+                    loop.run_until_complete(_gen())
+                    loop.close()
+                    pygame.mixer.music.load(tmp)
+                    pygame.mixer.music.play()
+                    while pygame.mixer.music.get_busy():
+                        time.sleep(0.05)
+                    pygame.mixer.music.unload()
+                    os.remove(tmp)
+                except Exception as ex:
+                    print(f"[Settings] Voice test error: {ex}")
+            threading.Thread(target=_play, daemon=True).start()
+
+        tk.Button(vf, text="🔊  PREVIEW VOICE", command=_test_voice,
+                  bg='#002030', fg=CYAN_BRIGHT, activebackground='#003040',
+                  relief='flat', bd=0, font=('Consolas', 8, 'bold'), cursor='hand2', pady=5
+                  ).pack(anchor='w', pady=(4, 0))
+
+        sf = tk.Frame(scroll_frame, bg=BG)
+        sf.pack(fill='x', pady=4)
+        tk.Label(sf, text="SPEECH RATE", bg=BG, fg=TEXT_MID, font=('Consolas', 8, 'bold')).pack(anchor='w')
+        row = tk.Frame(sf, bg=BG)
+        row.pack(fill='x')
+        tk.Scale(row, variable=speed_var, from_=110, to=240, orient='horizontal',
+                 bg=BG, fg=CYAN_BRIGHT, troughcolor='#001828', highlightthickness=0,
+                 font=('Consolas', 8), length=340).pack(side='left')
+        tk.Label(row, textvariable=speed_var, bg=BG, fg=CYAN_MID, font=('Consolas', 9), width=4).pack(side='left')
+
+        section_title("SPEECH RECOGNITION")
+        lf = tk.Frame(scroll_frame, bg=BG)
+        lf.pack(fill='x', pady=3)
+        tk.Label(lf, text="MICROPHONE LANGUAGE", bg=BG, fg=TEXT_MID, font=('Consolas', 8, 'bold')).pack(anchor='w')
+        lang_opts = ["en-IN", "en-US", "en-GB"]
+        lm = tk.OptionMenu(lf, lang_var, *lang_opts)
+        lm.config(bg='#030C1A', fg=CYAN_BRIGHT, activebackground='#061628',
+                  activeforeground=CYAN_BRIGHT, relief='flat', highlightthickness=0,
+                  font=('Consolas', 9), cursor='hand2')
+        lm["menu"].config(bg='#030C1A', fg=CYAN_BRIGHT, font=('Consolas', 9))
+        lm.pack(fill='x', pady=2)
+
+        section_title("HOTKEYS & REGION")
+        field("VOICE ACTIVATION HOTKEY", hk_var, "Key to start listening (e.g. P, F2)")
+        field("SUMMON WINDOW SHORTCUT", summon_var, "Global toggle shortcut (e.g. ctrl+space)")
+        field("WEATHER CITY", city_var, "City for weather queries (e.g. Delhi, Mumbai)")
+
+        # Save button
+        tk.Frame(win, bg=PANEL_EDGE, height=1).pack(fill='x', padx=16)
+        btn_frame = tk.Frame(win, bg=BG)
+        btn_frame.pack(fill='x', padx=16, pady=12)
+
+        def _save():
+            self.config['user_name']      = user_var.get().strip() or 'Madhav'
+            self.config['gemini_api_key'] = api_var.get().strip()
+            self.config['hotkey']         = hk_var.get().strip() or 'P'
+            self.config['summon_hotkey']  = summon_var.get().strip() or 'ctrl+space'
+            self.config['stt_language']   = lang_var.get().strip() or 'en-IN'
+            self.config['weather_city']   = city_var.get().strip()
+            self.config['voice_name']     = voice_var.get().strip() or 'en-GB-RyanNeural'
+            self.config['voice_speed']    = speed_var.get()
+
+            self._hdr_user.configure(text=f"OPERATOR: {self.config['user_name'].upper()}  ·  NEURAL CORE: ONLINE")
+            hk = self.config['hotkey'].upper()
+            self._activate_btn.configure(text=f"◉   ACTIVATE VOICE INTERFACE   [ {hk} ]")
+
+            if self.on_api_key_save:
+                self.on_api_key_save(self.config)
+            win.destroy()
+            self.add_system_message("Configuration synchronized — all parameters updated.")
+
+        tk.Button(btn_frame, text="▶  SAVE & SYNCHRONIZE",
+                  command=_save, bg='#001828', fg=CYAN_BRIGHT,
+                  activebackground='#002840', activeforeground='#FFFFFF',
+                  relief='flat', bd=0, font=('Consolas', 10, 'bold'),
+                  cursor='hand2', pady=8).pack(fill='x')

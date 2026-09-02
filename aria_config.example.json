@@ -1,0 +1,14 @@
+{
+  "gemini_api_key": "YOUR_GEMINI_API_KEY_HERE",
+  "hotkey": "P",
+  "summon_hotkey": "ctrl+space",
+  "voice_speed": 175,
+  "voice_volume": 0.9,
+  "tts_engine": "edge_tts",
+  "voice_name": "en-US-GuyNeural",
+  "stt_language": "en-IN",
+  "weather_city": "",
+  "assistant_name": "ARIA",
+  "user_name": "Madhav",
+  "theme": "dark"
+}

@@ -25,6 +25,8 @@ check("hotkey_handler", lambda: __import__("core.hotkey_handler", fromlist=["Hot
 
 # Actions
 check("app_control",    lambda: __import__("actions.app_control", fromlist=["open_app"]))
+check("media_control",  lambda: __import__("actions.media_control", fromlist=["play_pause"]))
+check("clipboard",      lambda: __import__("actions.clipboard_control", fromlist=["copy_to_clipboard"]))
 check("system_control", lambda: print("  volume:", __import__("actions.system_control", fromlist=["get_volume_level"]).get_volume_level()))
 check("web_control",    lambda: __import__("actions.web_control", fromlist=["search_web"]))
 check("file_control",   lambda: __import__("actions.file_control", fromlist=["open_folder"]))

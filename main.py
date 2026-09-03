@@ -1,44 +1,40 @@
 #!/usr/bin/env python3
 """
 ARIA — Adaptive Real-time Intelligent Assistant
-Main entry point and orchestrator.
-
-Usage:
-    python main.py
+Main orchestrator: wires voice I/O, AI brain, all PC actions, hotkeys, and UI.
 """
 
 import sys
 import os
 import threading
+import time
 
-# ── Suppress noisy startup messages ──────────────────────────────────────────
 os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = '1'
 
-# ── Imports ───────────────────────────────────────────────────────────────────
 import config as cfg
-from core.voice_input import VoiceInput
-from core.voice_output import VoiceOutput
-from core.ai_brain import AIBrain
+from core.voice_input   import VoiceInput
+from core.voice_output  import VoiceOutput
+from core.ai_brain      import AIBrain
 from core.hotkey_handler import HotkeyHandler
-from ui.app_window import AppWindow
+from ui.app_window      import AppWindow
 
-import actions.app_control as app_control
-import actions.system_control as system_control
-import actions.web_control as web_control
-import actions.file_control as file_control
-import actions.weather as weather_module
-import actions.screenshot as screenshot_module
+import actions.app_control      as app_ctrl
+import actions.system_control   as sys_ctrl
+import actions.web_control      as web_ctrl
+import actions.file_control     as file_ctrl
+import actions.media_control    as media_ctrl
+import actions.clipboard_control as clip_ctrl
+import actions.weather          as weather_mod
+import actions.screenshot       as screenshot_mod
 from actions.timer_control import TimerManager
 
 
 class ARIAAssistant:
     """
-    Top-level orchestrator that wires together voice I/O, AI brain, PC actions,
-    hotkey handling, and the floating UI.
+    Top-level orchestrator.
     """
 
     def __init__(self):
-        # Load user settings
         self.config = cfg.load_config()
 
         # ── Core components ──────────────────────────────────────────────────
@@ -46,7 +42,7 @@ class ARIAAssistant:
             language=self.config.get('stt_language', 'en-IN')
         )
         self.voice_output = VoiceOutput(
-            voice=self.config.get('voice_name', 'en-US-GuyNeural'),
+            voice=self.config.get('voice_name', 'en-GB-RyanNeural'),
             speed=self.config.get('voice_speed', 175),
             volume=self.config.get('voice_volume', 0.9)
         )
@@ -57,7 +53,7 @@ class ARIAAssistant:
         self.timer_manager = TimerManager()
 
         # ── State ────────────────────────────────────────────────────────────
-        self._busy = False          # Prevents overlapping listen sessions
+        self._busy      = False
         self._busy_lock = threading.Lock()
 
         # ── UI ───────────────────────────────────────────────────────────────
@@ -68,7 +64,6 @@ class ARIAAssistant:
             on_reset_memory=self._reset_memory,
         )
 
-        # Connect TTS status to UI updates
         self.voice_output.set_callbacks(
             on_start=lambda: self.window.set_status('speaking'),
             on_finish=lambda: self.window.set_status('idle'),
@@ -85,40 +80,31 @@ class ARIAAssistant:
     # ── Startup ───────────────────────────────────────────────────────────────
 
     def _startup_tasks(self):
-        """
-        Runs in a background thread after the UI is visible.
-        Calibrates mic, starts hotkey listener, speaks greeting.
-        """
-        # Mic calibration
+        """Background startup: calibrate mic, start hotkeys, greet."""
         self.window.add_system_message("Calibrating acoustic sensors...")
         self.voice_input.calibrate()
-        self.window.add_system_message("Sensors nominal. Neural core linked.")
+        self.window.add_system_message("Sensors nominal. All systems online.")
 
-        # Start global hotkeys
         self.hotkey.start()
 
-        # Personalized Best Friend Greeting
-        user_name = self.config.get('user_name', 'Madhav')
+        user = self.config.get('user_name', 'Madhav')
         if not self.config.get('gemini_api_key'):
-            msg = f"Hey {user_name}! I'm ARIA! Drop your free Gemini API key in settings and we're good to go!"
-            self.window.add_system_message("⚠️ No API key set. Open ⚙ Settings and add your Gemini API key.")
+            msg = (f"Hey {user}! I'm ARIA and I'm ready to roll. "
+                   f"Just drop your Gemini API key in Settings and we're set!")
+            self.window.add_system_message("⚠️ No API key — open ⚙ Settings to add your Gemini key.")
         else:
-            msg = f"Hey {user_name}! I'm so glad you're here. Everything is up and running smoothly! How can I help you today, my friend?"
+            msg = (f"Hey {user}! ARIA online, all systems nominal. "
+                   f"Press {self.config.get('hotkey','P').upper()} or just click Activate — what can I do for you?")
 
-        self.voice_output.speak(msg)
         self.window.add_aria_message(msg)
+        self.voice_output.speak(msg)
 
-    # ── Main Listen → Think → Act → Speak Loop ────────────────────────────────
+    # ── Main Voice Loop ───────────────────────────────────────────────────────
 
     def _start_listening(self):
-        """
-        Entry point for each voice interaction.
-        Called from hotkey handler or mic button — already in a background thread.
-        """
-        # Ensure ARIA surfaces to the front when triggered
+        """Entry point for each voice interaction (called from hotkey / button)."""
         self.window.bring_to_front()
 
-        # Prevent re-entrance
         with self._busy_lock:
             if self._busy:
                 return
@@ -133,114 +119,162 @@ class ARIAAssistant:
     def _run_interaction(self):
         """Full pipeline: listen → AI → action → speak."""
 
-        # 1 ── LISTEN
+        # 1. LISTEN
         self.window.set_status('listening')
-        text = self.voice_input.listen(timeout=7, phrase_time_limit=15)
+        text = self.voice_input.listen(timeout=8, phrase_time_limit=15)
 
         if not text:
-            user_name = self.config.get('user_name', 'Madhav')
+            user = self.config.get('user_name', 'Madhav')
             self.window.set_status('idle')
-            self.window.add_system_message("No clear audio captured. Please speak closer to your microphone.")
-            self.voice_output.speak(f"I didn't quite catch that, {user_name} — mind saying that again?")
+            self.window.add_system_message("No clear audio captured.")
+            self.voice_output.speak(
+                f"I didn't catch that, {user}. Try speaking a bit louder or closer to the mic?"
+            )
             return
 
         self.window.add_user_message(text)
+        print(f"[ARIA] Heard: '{text}'")
 
-        # 2 ── THINK (AI)
+        # 2. THINK
         self.window.set_status('thinking')
         speech, action, params = self.ai_brain.process(text)
 
-        # 3 ── HANDLE WEATHER (real data replaces AI placeholder)
+        # 3. WEATHER override (fetch real data)
         if action == 'get_weather':
             city = params.get('city', '') or self.config.get('weather_city', '')
-            weather_text = weather_module.get_detailed_weather(city)
-            speech = f"Here's the weather: {weather_text}"
+            weather_text = weather_mod.get_detailed_weather(city)
+            speech = f"Here's the latest: {weather_text}"
 
-        # 4 ── EXECUTE PC ACTION
+        # 4. EXECUTE
         self._execute_action(action, params)
 
-        # 5 ── SPEAK + SHOW response
+        # 5. SPEAK
         self.window.add_aria_message(speech)
         self.voice_output.speak(speech)
 
-    def _execute_action(self, action: str, params: dict):
-        """Dispatch a PC action based on the AI's decision."""
-        try:
-            if action == 'open_app':
-                app_control.open_app(params.get('name', ''))
+    # ── Action Dispatcher ─────────────────────────────────────────────────────
 
+    def _execute_action(self, action: str, params: dict):
+        """Dispatch any action from the AI brain to the right handler."""
+        try:
+            print(f"[ARIA] Executing action: '{action}' params: {params}")
+
+            # ── Apps ──────────────────────────────────────────────────────────
+            if action == 'open_app':
+                app_ctrl.open_app(params.get('name', ''))
+
+            elif action == 'close_app':
+                app_ctrl.close_app(params.get('name', ''))
+
+            # ── Media ─────────────────────────────────────────────────────────
+            elif action == 'play_spotify':
+                query = params.get('query', '')
+                if query:
+                    # First open Spotify if not running
+                    app_ctrl.open_app('spotify')
+                    time.sleep(2.5)  # Let Spotify open
+                    media_ctrl.play_on_spotify(query)
+                else:
+                    media_ctrl.play_pause()
+
+            elif action == 'play_youtube':
+                query = params.get('query', '')
+                if query:
+                    media_ctrl.play_on_youtube(query)
+                else:
+                    web_ctrl.open_url('youtube')
+
+            elif action == 'media_play_pause':
+                media_ctrl.play_pause()
+
+            elif action == 'media_next':
+                media_ctrl.next_track()
+
+            elif action == 'media_prev':
+                media_ctrl.prev_track()
+
+            elif action == 'media_stop':
+                media_ctrl.stop_media()
+
+            # ── Web ───────────────────────────────────────────────────────────
             elif action == 'search_web':
-                web_control.search_web(params.get('query', ''), params.get('site', ''))
+                web_ctrl.search_web(params.get('query', ''), params.get('site', ''))
 
             elif action == 'open_url':
-                web_control.open_url(params.get('url', ''))
+                web_ctrl.open_url(params.get('url', ''))
 
+            # ── Volume ────────────────────────────────────────────────────────
             elif action == 'volume_up':
-                system_control.volume_up(int(params.get('amount', 10)))
+                sys_ctrl.volume_up(int(params.get('amount', 10)))
 
             elif action == 'volume_down':
-                system_control.volume_down(int(params.get('amount', 10)))
+                sys_ctrl.volume_down(int(params.get('amount', 10)))
 
             elif action == 'volume_mute':
-                system_control.mute()
+                sys_ctrl.mute()
 
             elif action == 'volume_unmute':
-                system_control.unmute()
+                sys_ctrl.unmute()
 
             elif action == 'set_volume':
-                system_control.set_volume(int(params.get('level', 50)))
+                sys_ctrl.set_volume(int(params.get('level', 50)))
 
+            # ── Power ─────────────────────────────────────────────────────────
             elif action == 'shutdown':
-                system_control.shutdown()
+                sys_ctrl.shutdown()
 
             elif action == 'restart':
-                system_control.restart()
+                sys_ctrl.restart()
 
             elif action == 'sleep':
-                system_control.sleep()
+                sys_ctrl.sleep()
 
             elif action == 'lock':
-                system_control.lock_screen()
+                sys_ctrl.lock_screen()
 
+            # ── Files ─────────────────────────────────────────────────────────
             elif action == 'take_screenshot':
-                filepath = screenshot_module.take_screenshot()
-                if filepath:
-                    self.window.add_system_message(f"Screenshot saved → {os.path.basename(filepath)}")
+                fp = screenshot_mod.take_screenshot()
+                if fp:
+                    self.window.add_system_message(f"Screenshot saved → {os.path.basename(fp)}")
 
             elif action == 'open_folder':
-                file_control.open_folder(params.get('path', 'desktop'))
+                file_ctrl.open_folder(params.get('path', 'desktop'))
 
+            # ── Timers ────────────────────────────────────────────────────────
             elif action == 'set_timer':
                 seconds = int(params.get('seconds', 60))
-                label = params.get('label', 'Timer')
+                label   = params.get('label', 'Timer')
 
-                def _timer_done(lbl):
-                    msg = f"Your {lbl} is done!"
+                def _done(lbl):
+                    msg = f"Hey, your {lbl} is done!"
                     self.voice_output.speak(msg)
                     self.window.add_aria_message(msg)
 
-                self.timer_manager.set_timer(seconds, label, on_complete=_timer_done)
+                self.timer_manager.set_timer(seconds, label, on_complete=_done)
 
+            # ── Clipboard / Typing ────────────────────────────────────────────
             elif action == 'type_text':
-                import pyautogui
-                import time
-                time.sleep(0.4)  # Let window focus settle
-                pyautogui.typewrite(params.get('text', ''), interval=0.04)
+                clip_ctrl.type_text(params.get('text', ''))
 
+            elif action == 'copy_text':
+                clip_ctrl.copy_to_clipboard(params.get('text', ''))
+
+            # ── Pass-through ──────────────────────────────────────────────────
             elif action in ('none', 'get_weather'):
-                pass  # Conversation only or already handled above
+                pass  # Conversation or already handled above
 
             else:
-                print(f"[ARIA] Unknown action: '{action}'")
+                print(f"[ARIA] Unrecognised action: '{action}' — treating as conversation.")
 
         except Exception as e:
             print(f"[ARIA] Action error ({action}): {e}")
-            self.window.add_system_message(f"Action failed: {e}")
+            import traceback; traceback.print_exc()
+            self.window.add_system_message(f"Action error: {e}")
 
-    # ── Settings & Memory ─────────────────────────────────────────────────────
+    # ── Settings ──────────────────────────────────────────────────────────────
 
     def _on_settings_saved(self, new_config: dict):
-        """Apply updated settings at runtime."""
         self.config.update(new_config)
         cfg.save_config(self.config)
 
@@ -253,9 +287,8 @@ class ARIAAssistant:
             new_summon_hotkey=self.config.get('summon_hotkey', 'ctrl+space')
         )
         self.voice_input.set_language(self.config.get('stt_language', 'en-IN'))
-        self.voice_output.set_voice(self.config.get('voice_name', 'en-US-GuyNeural'))
+        self.voice_output.set_voice(self.config.get('voice_name', 'en-GB-RyanNeural'))
         self.voice_output.set_speed(self.config.get('voice_speed', 175))
-
         print("[ARIA] Settings updated.")
 
     def _reset_memory(self):
@@ -264,36 +297,26 @@ class ARIAAssistant:
     # ── Run ───────────────────────────────────────────────────────────────────
 
     def run(self):
-        """Start ARIA. Blocks until the window is closed."""
-        # Launch startup tasks after UI is ready
         threading.Thread(target=self._startup_tasks, daemon=True, name="ARIA-Startup").start()
-
-        # Run the UI event loop (main thread)
         self.window.run()
-
-        # Cleanup on exit
         self.hotkey.stop()
         self.voice_output.stop()
-        print("[ARIA] Shutting down. Goodbye!")
+        print("[ARIA] Shutting down.")
 
-
-# ── Entry Point ───────────────────────────────────────────────────────────────
 
 def main():
-    print("=" * 50)
-    print("  ARIA — Adaptive Real-time Intelligent Assistant")
-    print("=" * 50)
-
+    print("=" * 55)
+    print("  A.R.I.A. — Adaptive Real-time Intelligent Assistant")
+    print("=" * 55)
     try:
         aria = ARIAAssistant()
         aria.run()
     except KeyboardInterrupt:
-        print("\n[ARIA] Interrupted by user.")
+        print("\n[ARIA] Interrupted.")
         sys.exit(0)
     except Exception as e:
         print(f"[ARIA] Fatal error: {e}")
-        import traceback
-        traceback.print_exc()
+        import traceback; traceback.print_exc()
         sys.exit(1)
 
 

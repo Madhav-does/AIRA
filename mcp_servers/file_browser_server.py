@@ -8,9 +8,9 @@ Run as: python mcp_servers/file_browser_server.py
 import os
 import glob
 from datetime import datetime
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 
-mcp = FastMCP("ARIA File Browser")
+mcp = MCPServer("ARIA File Browser")
 
 # Safe roots — only expose these top-level directories
 SAFE_ROOTS = [

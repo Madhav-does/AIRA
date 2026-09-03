@@ -8,7 +8,7 @@ Run as: python mcp_servers/system_info_server.py
 import subprocess
 import os
 import shutil
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 
 try:
     import psutil
@@ -16,7 +16,7 @@ try:
 except ImportError:
     PSUTIL = False
 
-mcp = FastMCP("ARIA System Info")
+mcp = MCPServer("ARIA System Info")
 
 
 @mcp.tool()

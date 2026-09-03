@@ -76,7 +76,15 @@ class MCPManager:
     def stop(self):
         """Disconnect from all servers and stop the background loop."""
         if self._loop and self._loop.is_running():
-            asyncio.run_coroutine_threadsafe(self._cleanup(), self._loop).result(timeout=5)
+            try:
+                future = asyncio.run_coroutine_threadsafe(self._cleanup(), self._loop)
+                future.result(timeout=2)
+            except Exception:
+                pass
+            try:
+                self._loop.call_soon_threadsafe(self._loop.stop)
+            except Exception:
+                pass
 
     def get_tool_schemas(self) -> list[dict]:
         """Return a list of {name, description, inputSchema} dicts for all MCP tools."""
@@ -115,8 +123,11 @@ class MCPManager:
                 continue
             await self._connect_server(srv)
         self._ready.set()
-        # Keep the loop alive
-        await asyncio.Event().wait()
+        # Keep the loop alive until shutdown
+        try:
+            await asyncio.Event().wait()
+        except (asyncio.CancelledError, GeneratorExit):
+            pass
 
     async def _connect_server(self, srv: dict):
         """Connect to a single MCP server via stdio."""
@@ -142,11 +153,11 @@ class MCPManager:
                     "description": tool.description or "",
                     "inputSchema": tool.inputSchema if hasattr(tool, 'inputSchema') else {},
                 })
-            print(f"[MCPManager] ✓ '{name}' — {len(result.tools)} tools: "
+            print(f"[MCPManager] [OK] '{name}' - {len(result.tools)} tools: "
                   f"{[t.name for t in result.tools]}")
 
         except Exception as e:
-            print(f"[MCPManager] ✗ Failed to connect '{name}': {e}")
+            print(f"[MCPManager] [FAIL] Failed to connect '{name}': {e}")
 
     async def _async_call_tool(self, tool_name: str, arguments: dict) -> str:
         """Actually call the tool on the right session."""
@@ -167,4 +178,7 @@ class MCPManager:
         return "\n".join(parts) if parts else "(no output)"
 
     async def _cleanup(self):
-        await self._stack.aclose()
+        try:
+            await self._stack.aclose()
+        except Exception:
+            pass

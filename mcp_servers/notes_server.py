@@ -8,11 +8,11 @@ Run as: python mcp_servers/notes_server.py
 import json
 import os
 from datetime import datetime
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 
 NOTES_FILE = os.path.join(os.path.dirname(__file__), '..', 'aria_notes.json')
 
-mcp = FastMCP("ARIA Notes")
+mcp = MCPServer("ARIA Notes")
 
 
 def _load() -> list[dict]:

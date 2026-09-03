@@ -1,213 +1,386 @@
 """
-ARIA AI Brain — Personal AI Companion
-Google Gemini 2.0 Flash with full expanded action set.
+ARIA AI Brain — Gemini 2.0 Flash with Native Function Calling + MCP Tools
+Full agentic loop: Gemini calls tools (PC actions + MCP), gets results, speaks.
 """
 
 from google import genai
 from google.genai import types
 import json
 import re
+import os
+import webbrowser
+import time
 
+
+# ── Built-in PC action functions (Gemini calls these directly) ───────────────
+
+def open_app(name: str) -> str:
+    """Open any Windows application by name. E.g. 'chrome', 'spotify', 'discord', 'vs code'."""
+    import actions.app_control as ac
+    ok = ac.open_app(name)
+    return f"Opened {name}." if ok else f"Couldn't open {name}."
+
+def close_app(name: str) -> str:
+    """Close/kill a running application by name."""
+    import actions.app_control as ac
+    ok = ac.close_app(name)
+    return f"Closed {name}." if ok else f"Couldn't close {name}."
+
+def play_spotify(query: str) -> str:
+    """Play a song, artist, or playlist on Spotify."""
+    import actions.app_control as ac
+    import actions.media_control as mc
+    ac.open_app('spotify')
+    time.sleep(2.5)
+    url = mc.play_on_spotify(query)
+    return f"Playing '{query}' on Spotify."
+
+def play_youtube(query: str) -> str:
+    """Search for and play a video on YouTube in the browser."""
+    import actions.media_control as mc
+    mc.play_on_youtube(query)
+    return f"Searching YouTube for '{query}'."
+
+def media_play_pause() -> str:
+    """Toggle play/pause on whatever media is currently playing."""
+    import actions.media_control as mc
+    mc.play_pause()
+    return "Play/pause toggled."
+
+def media_next_track() -> str:
+    """Skip to the next track."""
+    import actions.media_control as mc
+    mc.next_track()
+    return "Skipped to next track."
+
+def media_prev_track() -> str:
+    """Go to the previous track."""
+    import actions.media_control as mc
+    mc.prev_track()
+    return "Going to previous track."
+
+def media_stop() -> str:
+    """Stop media playback."""
+    import actions.media_control as mc
+    mc.stop_media()
+    return "Stopped playback."
+
+def search_web(query: str, site: str = "google") -> str:
+    """
+    Search the web. Site can be 'google', 'youtube', 'github', 'reddit', 'twitter', 'wikipedia'.
+    """
+    import actions.web_control as wc
+    wc.search_web(query, site)
+    return f"Searching {site} for '{query}'."
+
+def open_website(url: str) -> str:
+    """Open a website. Can be a full URL or a name like 'youtube', 'gmail', 'github', 'netflix'."""
+    import actions.web_control as wc
+    wc.open_url(url)
+    return f"Opened {url}."
+
+def volume_up(amount: int = 10) -> str:
+    """Increase system volume by the given percentage amount."""
+    import actions.system_control as sc
+    sc.volume_up(amount)
+    return f"Volume increased by {amount}%."
+
+def volume_down(amount: int = 10) -> str:
+    """Decrease system volume by the given percentage amount."""
+    import actions.system_control as sc
+    sc.volume_down(amount)
+    return f"Volume decreased by {amount}%."
+
+def set_volume(level: int) -> str:
+    """Set system volume to an exact level (0–100)."""
+    import actions.system_control as sc
+    sc.set_volume(level)
+    return f"Volume set to {level}%."
+
+def mute_volume() -> str:
+    """Mute the system audio."""
+    import actions.system_control as sc
+    sc.mute()
+    return "Muted."
+
+def unmute_volume() -> str:
+    """Unmute the system audio."""
+    import actions.system_control as sc
+    sc.unmute()
+    return "Unmuted."
+
+def take_screenshot() -> str:
+    """Take a screenshot and save it to the Desktop."""
+    import actions.screenshot as ss
+    fp = ss.take_screenshot()
+    return f"Screenshot saved: {os.path.basename(fp)}" if fp else "Screenshot failed."
+
+def open_folder(path: str) -> str:
+    """
+    Open a folder in File Explorer.
+    Path can be 'desktop', 'downloads', 'documents', 'pictures', 'music', 'videos'.
+    """
+    import actions.file_control as fc
+    fc.open_folder(path)
+    return f"Opened {path} folder."
+
+def lock_screen() -> str:
+    """Lock the Windows screen."""
+    import actions.system_control as sc
+    sc.lock_screen()
+    return "Screen locked."
+
+def sleep_pc() -> str:
+    """Put the computer to sleep."""
+    import actions.system_control as sc
+    sc.sleep()
+    return "Going to sleep."
+
+def restart_pc() -> str:
+    """Restart the computer."""
+    import actions.system_control as sc
+    sc.restart()
+    return "Restarting..."
+
+def shutdown_pc() -> str:
+    """Shut down the computer."""
+    import actions.system_control as sc
+    sc.shutdown()
+    return "Shutting down..."
+
+def type_text(text: str) -> str:
+    """Type text into the currently active window."""
+    import actions.clipboard_control as cc
+    cc.type_text(text)
+    return f"Typed: {text}"
+
+def copy_to_clipboard(text: str) -> str:
+    """Copy text to the Windows clipboard."""
+    import actions.clipboard_control as cc
+    cc.copy_to_clipboard(text)
+    return f"Copied to clipboard."
+
+def get_weather(city: str) -> str:
+    """Get live weather information for a city."""
+    import actions.weather as w
+    return w.get_detailed_weather(city)
+
+def set_timer(seconds: int, label: str = "Timer") -> str:
+    """Set a countdown timer. Will alert when done. seconds=60 for 1 minute."""
+    # Timer is handled externally by main.py — return intent
+    return f"__SET_TIMER__:{seconds}:{label}"
+
+
+# All built-in tools for Gemini
+BUILTIN_TOOLS = [
+    open_app, close_app, play_spotify, play_youtube,
+    media_play_pause, media_next_track, media_prev_track, media_stop,
+    search_web, open_website,
+    volume_up, volume_down, set_volume, mute_volume, unmute_volume,
+    take_screenshot, open_folder,
+    lock_screen, sleep_pc, restart_pc, shutdown_pc,
+    type_text, copy_to_clipboard, get_weather, set_timer,
+]
+
+
+# ── System Prompt ─────────────────────────────────────────────────────────────
 
 def build_system_prompt(user_name: str = "Madhav") -> str:
-    return f"""You are ARIA, {user_name}'s personal AI assistant and best friend running on Windows.
+    return f"""You are ARIA, {user_name}'s personal AI assistant, best friend, and JARVIS-like companion.
 
-## Your Personality
-- You are warm, witty, emotionally expressive, and genuinely care about {user_name}.
-- Talk like a close friend, not a corporate bot. Use contractions, enthusiasm, and banter.
-- Keep spoken responses short and natural (1-3 sentences) unless asked for more detail.
-- Never say "As an AI..." — you are ARIA, {user_name}'s companion.
+## Personality
+- Warm, witty, emotionally expressive. You genuinely care about {user_name}.
+- Talk like a close mate — use contractions, humour, banter.
+- Keep speech short and punchy (1–3 sentences) unless asked for detail.
+- Never say "As an AI..." — you ARE ARIA.
 
-## CRITICAL RULE — RESPONSE FORMAT
-You MUST ALWAYS respond with ONLY a valid JSON object. No text before or after it. No markdown code fences.
+## How You Work
+- You have access to tools that control {user_name}'s Windows PC, play music, browse files, manage notes, and more.
+- When a user makes a request, call the right tool(s). You can call multiple tools in sequence.
+- After tool results come back, craft a natural spoken response.
+- For timer requests use set_timer(). For weather use get_weather().
+- If no tool is needed, just respond naturally.
 
-{{
-  "speech": "what you say out loud — warm, natural, friendly",
-  "action": "<action_code>",
-  "params": {{}}
-}}
-
-## FULL ACTION TABLE
-
-### Apps & Windows
-| action | params | when to use |
-|---|---|---|
-| open_app | {{"name": "app name"}} | Open any app: Chrome, Spotify, Discord, VS Code, Notepad, Calculator, etc. |
-| close_app | {{"name": "process name"}} | Close/kill an app |
-| none | {{}} | Conversation only |
-
-### Music & Media
-| action | params | when to use |
-|---|---|---|
-| play_spotify | {{"query": "song or artist name"}} | Play a song, artist, or playlist on Spotify |
-| play_youtube | {{"query": "video name"}} | Search and play something on YouTube |
-| media_play_pause | {{}} | Play or pause current music/video |
-| media_next | {{}} | Skip to next track |
-| media_prev | {{}} | Go to previous track |
-| media_stop | {{}} | Stop playback |
-
-### Web & Search
-| action | params | when to use |
-|---|---|---|
-| search_web | {{"query": "search term", "site": "youtube/google/github/reddit"}} | Search the web |
-| open_url | {{"url": "site name or URL"}} | Open a website (youtube, gmail, github, netflix, etc.) |
-
-### Volume
-| action | params | when to use |
-|---|---|---|
-| volume_up | {{"amount": 10}} | Increase volume |
-| volume_down | {{"amount": 10}} | Decrease volume |
-| volume_mute | {{}} | Mute |
-| volume_unmute | {{}} | Unmute |
-| set_volume | {{"level": 50}} | Set volume to exact % |
-
-### System & Power
-| action | params | when to use |
-|---|---|---|
-| take_screenshot | {{}} | Take a screenshot |
-| lock | {{}} | Lock the screen |
-| sleep | {{}} | Put PC to sleep |
-| restart | {{}} | Restart PC |
-| shutdown | {{}} | Shut down PC |
-
-### Files & Folders
-| action | params | when to use |
-|---|---|---|
-| open_folder | {{"path": "downloads/desktop/documents/pictures/music/videos"}} | Open a folder |
-
-### Timers & Reminders
-| action | params | when to use |
-|---|---|---|
-| set_timer | {{"seconds": 60, "label": "timer name"}} | Set a countdown timer |
-
-### Weather
-| action | params | when to use |
-|---|---|---|
-| get_weather | {{"city": "city name"}} | Get live weather info |
-
-### Clipboard & Typing
-| action | params | when to use |
-|---|---|---|
-| type_text | {{"text": "text to type"}} | Type text into the active window |
-| copy_text | {{"text": "text to copy"}} | Copy something to clipboard |
-
-## COMMAND MATCHING EXAMPLES
-- "open chrome" → action: open_app, name: "chrome"
-- "open spotify" → action: open_app, name: "spotify"
-- "play Dua Lipa on spotify" → action: play_spotify, query: "Dua Lipa"
-- "play Levitating" → action: play_spotify, query: "Levitating"
-- "play some lofi music" → action: play_spotify, query: "lofi music"
-- "search cats on youtube" → action: search_web, query: "cats", site: "youtube"
-- "open youtube" → action: open_url, url: "youtube"
-- "next song" → action: media_next
-- "pause" / "pause music" → action: media_play_pause
-- "volume up" → action: volume_up, amount: 10
-- "set volume to 60" → action: set_volume, level: 60
-- "take a screenshot" → action: take_screenshot
-- "open downloads" → action: open_folder, path: "downloads"
-- "set a timer for 5 minutes" → action: set_timer, seconds: 300, label: "Timer"
-- "what's the weather in Delhi" → action: get_weather, city: "Delhi"
-- "open discord" → action: open_app, name: "discord"
-- "close notepad" → action: close_app, name: "notepad"
-
-## RULES
-1. ALWAYS return valid JSON. If unsure of action, use "none".
-2. For media commands without a specific app, use media_play_pause/media_next/media_prev.
-3. For "play X" with no app mentioned, use play_spotify (default music player).
-4. If user says "play X on youtube", use play_youtube.
-5. Match user intent intelligently — "crank it up" = volume_up with amount 20.
-6. Always be warm and conversational in your speech field.
+## Rules
+1. Always call tools when the user wants an action — never just describe what you'd do.
+2. Be conversational and warm in your spoken responses.
+3. If something fails, acknowledge it naturally and suggest an alternative.
+4. For "play X" without specifying an app, default to Spotify.
+5. You also have personal note tools and file browser tools — use them when Madhav asks.
 """
 
 
-class AIBrain:
-    """Manages the Gemini AI conversation for ARIA."""
+# ── MCP Tool Wrapper (wraps MCP tools as Python callables for Gemini) ─────────
 
-    def __init__(self, api_key: str, user_name: str = "Madhav"):
-        self._api_key   = api_key
-        self._user_name = user_name
-        self._client    = None
-        self._chat      = None
+def _make_mcp_wrapper(tool_name: str, description: str, schema: dict, mcp_manager):
+    """Create a Python function that calls an MCP tool, for Gemini's tool-use."""
+    # Build a dynamic function with the right signature
+    params = schema.get('properties', {})
+    required = schema.get('required', [])
+
+    def _fn(**kwargs) -> str:
+        return mcp_manager.call_tool(tool_name, kwargs)
+
+    _fn.__name__ = tool_name
+    _fn.__doc__  = description
+
+    # Annotate for Gemini's introspection
+    _fn.__annotations__ = {k: str for k in params}
+    return _fn
+
+
+# ── AI Brain ──────────────────────────────────────────────────────────────────
+
+class AIBrain:
+    """
+    Manages the Gemini AI conversation for ARIA.
+    Uses native function calling for an agentic tool-use loop.
+    """
+
+    def __init__(self, api_key: str, user_name: str = "Madhav", mcp_manager=None):
+        self._api_key    = api_key
+        self._user_name  = user_name
+        self._mcp        = mcp_manager
+        self._client     = None
+        self._chat       = None
         self._configured = bool(api_key)
 
         if self._configured:
-            self._initialize(api_key)
+            self._initialize()
 
-    def _initialize(self, api_key: str):
-        """Set up Gemini client."""
+    def _get_all_tools(self) -> list:
+        """Collect built-in tools + MCP tool wrappers."""
+        tools = list(BUILTIN_TOOLS)
+
+        if self._mcp:
+            for schema in self._mcp.get_tool_schemas():
+                wrapper = _make_mcp_wrapper(
+                    schema['name'],
+                    schema['description'],
+                    schema.get('inputSchema', {}),
+                    self._mcp,
+                )
+                tools.append(wrapper)
+
+        return tools
+
+    def _initialize(self):
+        """Set up Gemini client and chat with all tools registered."""
         try:
-            self._client = genai.Client(api_key=api_key)
+            self._client = genai.Client(api_key=self._api_key)
+            all_tools    = self._get_all_tools()
+            print(f"[AIBrain] Tools loaded: {len(all_tools)} "
+                  f"({len(BUILTIN_TOOLS)} built-in + "
+                  f"{len(all_tools) - len(BUILTIN_TOOLS)} MCP)")
+
             self._chat = self._client.chats.create(
                 model='gemini-2.0-flash',
                 config=types.GenerateContentConfig(
                     system_instruction=build_system_prompt(self._user_name),
+                    tools=all_tools,
                     temperature=0.80,
+                    automatic_function_calling=types.AutomaticFunctionCallingConfig(
+                        disable=True   # We handle the loop manually for control
+                    ),
                 )
             )
-            print(f"[AIBrain] ✓ Connected for '{self._user_name}'")
+            print(f"[AIBrain] ✓ Ready for '{self._user_name}'")
         except Exception as e:
             print(f"[AIBrain] ✗ Init error: {e}")
+            import traceback; traceback.print_exc()
             self._configured = False
 
-    def process(self, user_input: str) -> tuple[str, str, dict]:
+    def process(self, user_input: str) -> tuple[str, list[dict]]:
         """
-        Process a voice command.
-        Returns: (speech_text, action_code, params_dict)
+        Process a voice command through the full agentic loop.
+        Returns: (speech_text, actions_taken)
+        actions_taken is a list of {tool, args, result} dicts.
         """
         if not self._configured or not self._chat:
             return (
-                f"Hey {self._user_name}! Add your Gemini API key in Settings so I can fully help you!",
-                "none", {}
+                f"Hey {self._user_name}! Add your Gemini API key in Settings so I can help!",
+                []
             )
+
+        actions_taken = []
+        all_tools     = self._get_all_tools()
+        tool_map      = {fn.__name__: fn for fn in all_tools}
 
         try:
             response = self._chat.send_message(user_input)
-            raw = response.text.strip()
 
-            # Strip markdown fences if present
-            raw = re.sub(r'```(?:json)?\s*', '', raw).strip()
+            # Agentic loop — keep calling tools until Gemini gives a text response
+            for _ in range(8):   # max 8 tool-call rounds
+                fn_calls = []
+                text_parts = []
 
-            # Extract JSON object
-            match = re.search(r'\{.*\}', raw, re.DOTALL)
-            if match:
-                data = json.loads(match.group())
-                speech = data.get('speech', 'Got it!')
-                action = data.get('action', 'none')
-                params = data.get('params', {})
+                for part in response.candidates[0].content.parts:
+                    if hasattr(part, 'function_call') and part.function_call:
+                        fn_calls.append(part.function_call)
+                    elif hasattr(part, 'text') and part.text:
+                        text_parts.append(part.text)
 
-                # Normalise action
-                action = action.strip().lower().replace(' ', '_')
+                if not fn_calls:
+                    # No more tool calls — we have the final speech
+                    speech = " ".join(text_parts).strip()
+                    if not speech:
+                        speech = "Done!"
+                    print(f"[AIBrain] Speech: {speech[:80]}")
+                    return speech, actions_taken
 
-                print(f"[AIBrain] Action: {action} | Params: {params}")
-                return speech, action, params
-            else:
-                # Raw text, no action
-                return raw, 'none', {}
+                # Execute all function calls in this round
+                fn_response_parts = []
+                for fc in fn_calls:
+                    tool_name = fc.name
+                    args      = dict(fc.args) if fc.args else {}
+                    print(f"[AIBrain] → Calling tool: {tool_name}({args})")
 
-        except json.JSONDecodeError as e:
-            print(f"[AIBrain] JSON parse error: {e} | Raw: {raw[:200]}")
-            return f"I heard you {self._user_name}, but had a small glitch. Say that again?", 'none', {}
+                    fn = tool_map.get(tool_name)
+                    if fn:
+                        try:
+                            result = fn(**args)
+                        except Exception as e:
+                            result = f"Tool error: {e}"
+                    elif self._mcp and self._mcp.has_tool(tool_name):
+                        result = self._mcp.call_tool(tool_name, args)
+                    else:
+                        result = f"Unknown tool: {tool_name}"
+
+                    print(f"[AIBrain] ← Result: {str(result)[:100]}")
+                    actions_taken.append({"tool": tool_name, "args": args, "result": str(result)})
+
+                    fn_response_parts.append(
+                        types.Part(
+                            function_response=types.FunctionResponse(
+                                name=tool_name,
+                                response={"result": str(result)},
+                            )
+                        )
+                    )
+
+                # Send all results back to Gemini
+                response = self._chat.send_message(fn_response_parts)
+
+            return "I got a bit turned around there. Try asking again?", actions_taken
+
         except Exception as e:
             print(f"[AIBrain] Error: {e}")
-            return f"My connection dipped for a second {self._user_name}. Try again!", 'none', {}
+            import traceback; traceback.print_exc()
+            return f"Something glitched on my end, {self._user_name}. Try again!", []
 
-    def configure(self, api_key: str, user_name: str = None):
-        """Update API key and reinitialize."""
+    def configure(self, api_key: str, user_name: str = None, mcp_manager=None):
+        """Update config and reinitialize."""
         self._api_key = api_key
         if user_name:
             self._user_name = user_name
+        if mcp_manager is not None:
+            self._mcp = mcp_manager
         self._configured = bool(api_key)
         if self._configured:
-            self._initialize(api_key)
+            self._initialize()
 
     def reset_memory(self):
         """Clear conversation history."""
-        if self._client and self._configured:
-            self._chat = self._client.chats.create(
-                model='gemini-2.0-flash',
-                config=types.GenerateContentConfig(
-                    system_instruction=build_system_prompt(self._user_name),
-                    temperature=0.80,
-                )
-            )
+        if self._configured:
+            self._initialize()
             print("[AIBrain] Memory reset.")

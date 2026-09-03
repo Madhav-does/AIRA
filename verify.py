@@ -33,6 +33,8 @@ check("file_control",   lambda: __import__("actions.file_control", fromlist=["op
 check("timer_control",  lambda: __import__("actions.timer_control", fromlist=["TimerManager"]).TimerManager())
 check("weather",        lambda: __import__("actions.weather", fromlist=["get_weather"]))
 check("screenshot",     lambda: __import__("actions.screenshot", fromlist=["take_screenshot"]))
+check("email_control",   lambda: __import__("actions.email_control", fromlist=["compose_email"]))
+check("tools_extra",     lambda: __import__("actions.tools_extra", fromlist=["calculate_math"]))
 
 # UI (skip rendering, just check imports)
 check("ui.app_window",  lambda: __import__("ui.app_window", fromlist=["AppWindow"]))

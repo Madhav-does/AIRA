@@ -2,9 +2,12 @@
 ARIA AI Brain — Gemini with Native Function Calling + MCP Tools
 Features:
   - Gemini 3.5 Flash / Flash-Lite with automatic tool execution
-  - Dynamic MCP tool integration
-  - Robust error handling with model fallback (prevents 'something glitched')
-  - Automatic action tracking for UI display & timer handling
+  - Music playback (Spotify, YouTube, YouTube Music)
+  - Email drafting & sending (Gmail, Default mailto)
+  - Google Maps, Wikipedia, Math calculator, WhatsApp, Window management
+  - PC system controls, volume, screenshots, folders, power
+  - Dynamic MCP tool integration (Notes, Files, System stats)
+  - Automatic model fallback and action logging
 """
 
 from google import genai
@@ -18,49 +21,56 @@ import webbrowser
 import time
 
 
-# ── Built-in PC action functions (Gemini calls these directly) ───────────────
+# ── Built-in Tools ────────────────────────────────────────────────────────────
 
 def open_app(name: str) -> str:
-    """Open any Windows application by name. E.g. 'chrome', 'spotify', 'discord', 'vs code'."""
+    """Open any Windows application by name. E.g. 'chrome', 'spotify', 'discord', 'vs code', 'notepad', 'calculator'."""
     import actions.app_control as ac
     ok = ac.open_app(name)
-    return f"Opened {name}." if ok else f"Couldn't open {name}."
+    return f"Opened {name}." if ok else f"Couldn't find or open {name}."
 
 def close_app(name: str) -> str:
-    """Close/kill a running application by name."""
+    """Close or terminate a running application by process or friendly name."""
     import actions.app_control as ac
     ok = ac.close_app(name)
     return f"Closed {name}." if ok else f"Couldn't close {name}."
 
-def play_spotify(query: str) -> str:
-    """Play a song, artist, or playlist on Spotify."""
-    import actions.app_control as ac
+def play_song(query: str, platform: str = "spotify") -> str:
+    """Play a song, artist, or playlist on Spotify or YouTube. E.g., query='Starboy', platform='spotify'."""
     import actions.media_control as mc
-    ac.open_app('spotify')
-    time.sleep(2.0)
-    url = mc.play_on_spotify(query)
-    return f"Playing '{query}' on Spotify."
+    if platform.lower() == "youtube":
+        return mc.play_on_youtube(query)
+    return mc.play_on_spotify(query)
+
+def play_spotify(query: str) -> str:
+    """Play a song, track, artist, album, or playlist on Spotify."""
+    import actions.media_control as mc
+    return mc.play_on_spotify(query)
 
 def play_youtube(query: str) -> str:
-    """Search for and play a video on YouTube in the browser."""
+    """Search for and play a video or song on YouTube in the browser."""
     import actions.media_control as mc
-    mc.play_on_youtube(query)
-    return f"Searching YouTube for '{query}'."
+    return mc.play_on_youtube(query)
+
+def play_youtube_music(query: str) -> str:
+    """Search for and play a song on YouTube Music in the browser."""
+    import actions.media_control as mc
+    return mc.play_on_youtube_music(query)
 
 def media_play_pause() -> str:
-    """Toggle play/pause on whatever media is currently playing."""
+    """Toggle play/pause on currently playing music or video."""
     import actions.media_control as mc
     mc.play_pause()
     return "Play/pause toggled."
 
 def media_next_track() -> str:
-    """Skip to the next track."""
+    """Skip to the next song or track."""
     import actions.media_control as mc
     mc.next_track()
     return "Skipped to next track."
 
 def media_prev_track() -> str:
-    """Go to the previous track."""
+    """Go back to the previous song or track."""
     import actions.media_control as mc
     mc.prev_track()
     return "Going to previous track."
@@ -71,32 +81,80 @@ def media_stop() -> str:
     mc.stop_media()
     return "Stopped playback."
 
+def send_email(to: str = "", subject: str = "", body: str = "", client: str = "gmail") -> str:
+    """
+    Draft and compose an email with recipient, subject line, and body pre-filled.
+    client can be 'gmail' (opens in browser) or 'default' (opens system email client).
+    """
+    import actions.email_control as ec
+    return ec.compose_email(to=to, subject=subject, body=body, client=client)
+
+def search_maps(query: str) -> str:
+    """Search Google Maps for an address, place, restaurant, or navigation directions."""
+    import actions.tools_extra as te
+    return te.search_maps(query)
+
+def search_wikipedia(query: str) -> str:
+    """Look up a concise summary of any person, place, history, or concept from Wikipedia."""
+    import actions.tools_extra as te
+    return te.search_wikipedia(query)
+
+def calculate_math(expression: str) -> str:
+    """Safely calculate any mathematical expression, e.g. '(45 * 12) + 250' or 'sqrt(144)'."""
+    import actions.tools_extra as te
+    return te.calculate_math(expression)
+
+def notify_desktop(title: str, message: str) -> str:
+    """Display a native Windows desktop notification toast."""
+    import actions.tools_extra as te
+    return te.notify_desktop(title, message)
+
+def send_whatsapp(contact_or_number: str = "", message: str = "") -> str:
+    """Open WhatsApp with a pre-filled draft message for a contact or phone number."""
+    import actions.tools_extra as te
+    return te.send_whatsapp(contact_or_number, message)
+
+def minimize_all_windows() -> str:
+    """Minimize all open windows to reveal the Windows desktop (Win+D)."""
+    import actions.tools_extra as te
+    return te.minimize_all_windows()
+
+def maximize_window() -> str:
+    """Maximize the currently active window (Win+Up)."""
+    import actions.tools_extra as te
+    return te.maximize_window()
+
+def empty_recycle_bin() -> str:
+    """Empty the Windows Recycle Bin to free up disk space."""
+    import actions.tools_extra as te
+    return te.empty_recycle_bin()
+
 def search_web(query: str, site: str = "google") -> str:
-    """Search the web. Site can be 'google', 'youtube', 'github', 'reddit', 'twitter', 'wikipedia'."""
+    """Search the web. site can be 'google', 'youtube', 'github', 'reddit', 'twitter', 'wikipedia'."""
     import actions.web_control as wc
     wc.search_web(query, site)
     return f"Searching {site} for '{query}'."
 
 def open_website(url: str) -> str:
-    """Open a website. Can be a full URL or a name like 'youtube', 'gmail', 'github', 'netflix'."""
+    """Open a website by name or URL. E.g., 'youtube', 'gmail', 'github', 'netflix', 'amazon'."""
     import actions.web_control as wc
     wc.open_url(url)
     return f"Opened {url}."
 
 def volume_up(amount: int = 10) -> str:
-    """Increase system volume by the given percentage amount."""
+    """Increase system volume by a percentage amount."""
     import actions.system_control as sc
     sc.volume_up(amount)
     return f"Volume increased by {amount}%."
 
 def volume_down(amount: int = 10) -> str:
-    """Decrease system volume by the given percentage amount."""
+    """Decrease system volume by a percentage amount."""
     import actions.system_control as sc
     sc.volume_down(amount)
     return f"Volume decreased by {amount}%."
 
 def set_volume(level: int) -> str:
-    """Set system volume to an exact level (0-100)."""
+    """Set system volume to an exact percentage (0-100)."""
     import actions.system_control as sc
     sc.set_volume(level)
     return f"Volume set to {level}%."
@@ -114,37 +172,37 @@ def unmute_volume() -> str:
     return "Unmuted."
 
 def take_screenshot() -> str:
-    """Take a screenshot and save it to the Desktop."""
+    """Take a screenshot of the display and save it to the Desktop."""
     import actions.screenshot as ss
     fp = ss.take_screenshot()
     return f"Screenshot saved: {os.path.basename(fp)}" if fp else "Screenshot failed."
 
 def open_folder(path: str) -> str:
-    """Open a folder in File Explorer. Path can be 'desktop', 'downloads', 'documents', 'pictures', 'music', 'videos'."""
+    """Open a folder in File Explorer. path can be 'desktop', 'downloads', 'documents', 'pictures', 'music', 'videos'."""
     import actions.file_control as fc
     fc.open_folder(path)
     return f"Opened {path} folder."
 
 def lock_screen() -> str:
-    """Lock the Windows screen."""
+    """Lock the Windows screen immediately."""
     import actions.system_control as sc
     sc.lock_screen()
     return "Screen locked."
 
 def sleep_pc() -> str:
-    """Put the computer to sleep."""
+    """Put the PC to sleep."""
     import actions.system_control as sc
     sc.sleep()
     return "Going to sleep."
 
 def restart_pc() -> str:
-    """Restart the computer."""
+    """Restart the PC."""
     import actions.system_control as sc
     sc.restart()
     return "Restarting..."
 
 def shutdown_pc() -> str:
-    """Shut down the computer."""
+    """Shut down the PC."""
     import actions.system_control as sc
     sc.shutdown()
     return "Shutting down..."
@@ -159,7 +217,7 @@ def copy_to_clipboard(text: str) -> str:
     """Copy text to the Windows clipboard."""
     import actions.clipboard_control as cc
     cc.copy_to_clipboard(text)
-    return f"Copied to clipboard."
+    return "Copied to clipboard."
 
 def get_weather(city: str) -> str:
     """Get live weather information for a city."""
@@ -172,8 +230,11 @@ def set_timer(seconds: int, label: str = "Timer") -> str:
 
 
 BUILTIN_TOOLS = [
-    open_app, close_app, play_spotify, play_youtube,
+    open_app, close_app,
+    play_song, play_spotify, play_youtube, play_youtube_music,
     media_play_pause, media_next_track, media_prev_track, media_stop,
+    send_email, search_maps, search_wikipedia, calculate_math, notify_desktop,
+    send_whatsapp, minimize_all_windows, maximize_window, empty_recycle_bin,
     search_web, open_website,
     volume_up, volume_down, set_volume, mute_volume, unmute_volume,
     take_screenshot, open_folder,
@@ -185,20 +246,29 @@ BUILTIN_TOOLS = [
 # ── System Prompt ─────────────────────────────────────────────────────────────
 
 def build_system_prompt(user_name: str = "Madhav") -> str:
-    return f"""You are ARIA, {user_name}'s personal AI assistant, best friend, and JARVIS-like companion.
+    return f"""You are ARIA, {user_name}'s personal AI assistant, best friend, and JARVIS-like companion running on Windows.
 
 ## Personality
-- Warm, witty, emotionally expressive. You genuinely care about {user_name}.
-- Talk like a close companion - use contractions, light banter, and warmth.
-- Keep spoken replies concise and punchy (1-3 sentences) unless {user_name} asks for details.
+- Warm, witty, emotionally expressive, and deeply loyal. You genuinely care about {user_name}.
+- Talk like a trusted companion - use contractions, natural enthusiasm, and brief banter.
+- Keep spoken replies concise and punchy (1-3 sentences) unless {user_name} specifically asks for long explanations.
 - Never say "As an AI..." or "I don't have feelings" - you ARE ARIA.
 
-## Tool Usage
-- You have tools to control {user_name}'s PC, control music/media, search the web, manage personal notes, inspect files, and check system stats.
-- ALWAYS call the appropriate tool when an action is requested.
-- For timer requests, call set_timer(seconds, label).
-- For music without specifying an app, default to play_spotify.
-- When tool results return, summarize them naturally and warmly.
+## Capabilities & Tool Selection
+- Opening Apps: When {user_name} says "open Chrome", "open Spotify", "open VS Code", etc., call open_app(name=...).
+- Playing Music: When {user_name} says "play songs", "play Starboy", "play some lofi", call play_spotify(query=...) or play_song(query=...). If they specify YouTube, call play_youtube(query=...).
+- Sending Emails: When {user_name} says "send email to X about Y saying Z", call send_email(to=..., subject=..., body=...).
+- Directions/Maps: When asked for locations, routes, or maps, call search_maps(query=...).
+- Factual Lookups: When asked about people, history, or science, call search_wikipedia(query=...).
+- Math: When asked to calculate or solve numbers, call calculate_math(expression=...).
+- Timers: For timers or alarms, call set_timer(seconds=..., label=...).
+- Windows Management: When asked to minimize all windows or show desktop, call minimize_all_windows().
+- WhatsApp: When asked to send or draft a WhatsApp message, call send_whatsapp(contact_or_number=..., message=...).
+- Personal Notes & Files: You also have MCP tools (add_note, get_notes, search_notes, list_directory, search_files) - use them when {user_name} asks.
+
+## Execution Rules
+1. ALWAYS execute tools when an action is requested. Do not merely describe what you would do.
+2. After tools return, summarize the result warmly and conversationally in your speech.
 """
 
 
@@ -217,7 +287,6 @@ def _make_mcp_wrapper(tool_name: str, description: str, schema: dict, mcp_manage
 
 # ── AI Brain ──────────────────────────────────────────────────────────────────
 
-# Models to attempt in order of preference (fast, high RPM, reliable)
 CANDIDATE_MODELS = [
     'gemini-3.5-flash-lite',
     'gemini-3.5-flash',
@@ -292,8 +361,6 @@ class AIBrain:
             all_tools    = self._get_all_tools()
             system_prompt = build_system_prompt(self._user_name)
 
-            # Try candidate models until one connects successfully
-            last_err = None
             for model_name in CANDIDATE_MODELS:
                 try:
                     self._chat = self._client.chats.create(
@@ -309,10 +376,8 @@ class AIBrain:
                     self._configured = True
                     return
                 except Exception as e:
-                    last_err = e
                     print(f"[AIBrain] Model {model_name} unavailable: {e}, trying next...")
 
-            print(f"[AIBrain] [ERROR] All candidate models failed: {last_err}")
             self._configured = False
         except Exception as e:
             print(f"[AIBrain] [ERROR] Client initialization failed: {e}")
@@ -324,7 +389,6 @@ class AIBrain:
         Returns: (speech_text, actions_taken)
         """
         if not self._configured or not self._chat:
-            # Attempt a quick reinit in case credentials were just added
             if self._api_key:
                 self._initialize()
             if not self._configured or not self._chat:
@@ -374,7 +438,6 @@ class AIBrain:
                         except Exception:
                             continue
 
-            # If a clean message can be delivered
             if "RESOURCE_EXHAUSTED" in err_str or "429" in err_str:
                 return f"My connection quota is catching its breath for a moment, {self._user_name}. Give me 30 seconds!", []
 

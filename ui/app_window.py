@@ -86,9 +86,9 @@ STATE = {
     },
 }
 
-NUM_BARS = 120
-FPS      = 42
-HEX_R    = 30
+NUM_BARS = 90     # fewer bars → fewer canvas updates per frame
+FPS      = 30     # 30fps is plenty smooth for tkinter
+HEX_R    = 34     # larger cells → fewer hexagons total
 
 
 class AppWindow:
@@ -119,9 +119,15 @@ class AppWindow:
         self._osc_t   = 0.0
         self._ticker  = 0     # frame counter for telemetry update
 
-        # hardware
+        # Performance: hex grid only redrawn on resize, not every frame
+        self._hex_dirty = True
+        self._last_hex_r = 0
+
+        # hardware — polled in background thread, never blocks UI
         self._cpu = 0.0
         self._ram = 0.0
+        if PSUTIL_AVAILABLE:
+            threading.Thread(target=self._poll_hardware, daemon=True, name="ARIA-HW").start()
 
         # data stream (side panel scrolling hex numbers)
         self._stream_l = [f"{random.randint(0,0xFFFF):04X}" for _ in range(20)]
@@ -226,7 +232,7 @@ class AppWindow:
 
         # ── Radar sweep ───────────────────────────────────────────────────────
         self._sweep_line = c.create_line(0,0,1,1, fill=GREEN_LIT, width=2)
-        self._sweep_fade = [c.create_arc(0,0,1,1, start=0, extent=1, outline='#002010', style='arc', width=2) for _ in range(18)]
+        self._sweep_fade = [c.create_arc(0,0,1,1, start=0, extent=6, outline='#002010', style='arc', width=2) for _ in range(8)]
 
         # ── Pulse rings (radiating outward) ───────────────────────────────────
         self._pulse_rings = [c.create_oval(0,0,1,1, outline='#001520', width=1) for _ in range(4)]
@@ -309,7 +315,37 @@ class AppWindow:
         self._cy = self._h * 0.44
         self._base_r = max(95, min(self._w * 0.21, self._h * 0.30))
         self._canvas.itemconfig(self._dp_txt, width=max(300, self._w - 80))
+        self._hex_dirty = True   # redraw hex grid on next frame
         self._update_corners()
+        self._update_static_items()  # reposition rings & degree marks
+
+    def _update_static_items(self):
+        """Update canvas items that only change on window resize."""
+        c = self._canvas
+        cx, cy, r = self._cx, self._cy, self._base_r
+
+        def oval(item, rad, **kw):
+            c.coords(item, cx-rad, cy-rad, cx+rad, cy+rad)
+            if kw: c.itemconfig(item, **kw)
+
+        oval(self._r_outer3, r * 1.60)
+        oval(self._r_outer2, r * 1.45)
+        oval(self._r_outer1, r * 1.30)
+        oval(self._r_mid,    r * 1.15)
+        oval(self._r_core,   r * 1.00)
+
+        dr = r * 1.68
+        for i, dm in enumerate(self._deg_marks):
+            a = (2*math.pi*i/12) - math.pi/2
+            c.coords(dm, cx + dr*math.cos(a), cy + dr*math.sin(a))
+            c.itemconfig(dm, text=f"{i*30:03d}°")
+
+        # Panel text positions (label + status text)
+        fsize = max(14, int(r * 0.145))
+        c.coords(self._txt_aria,   cx, cy - r * 0.06)
+        c.itemconfig(self._txt_aria, font=('Consolas', fsize, 'bold'))
+        c.coords(self._txt_label,  cx, cy + r * 0.11)
+        c.coords(self._txt_status, cx, cy + r * 0.22)
 
     def _update_corners(self):
         s, w, h = 22, self._w, self._h
@@ -328,123 +364,125 @@ class AppWindow:
         if not self._running:
             return
 
-        t  = time.time()
-        s  = STATE[self._status]
+        t   = time.time()
+        s   = STATE[self._status]
         cx, cy, r = self._cx, self._cy, self._base_r
-        c  = self._canvas
+        c   = self._canvas
         bright = s['bright']
         mid    = s['mid']
         dim    = s['dim']
         amp    = s['amp']
         spd    = s['speed']
 
-        # ── Hex grid ──────────────────────────────────────────────────────────
-        self._draw_hex_grid(cx, cy, r)
+        # ── Hex grid: only redrawn on resize or first frame ───────────────────
+        if self._hex_dirty or abs(r - self._last_hex_r) > 2:
+            self._draw_hex_grid(cx, cy, r)
+            self._hex_dirty = False
+            self._last_hex_r = r
 
         # ── Pulse rings ───────────────────────────────────────────────────────
-        pulse_speed = spd * 0.06
+        pulse_speed = spd * 0.05
         for i, pr in enumerate(self._pulse_rings):
             self._pulse_radii[i] = (self._pulse_radii[i] + pulse_speed) % 1.0
-            fr = self._pulse_radii[i]
+            fr        = self._pulse_radii[i]
             pr_radius = r * (1.0 + fr * 0.8)
-            fade_col = self._lerp_colour(mid, BG, fr)
+            fade_col  = self._lerp_colour(mid, BG, fr)
             c.coords(pr, cx-pr_radius, cy-pr_radius, cx+pr_radius, cy+pr_radius)
             c.itemconfig(pr, outline=fade_col)
 
-        # ── Static rings ──────────────────────────────────────────────────────
-        def oval(item, rad, **kw):
-            c.coords(item, cx-rad, cy-rad, cx+rad, cy+rad)
-            if kw: c.itemconfig(item, **kw)
-
-        oval(self._r_outer3, r * 1.60)
-        oval(self._r_outer2, r * 1.45)
-        oval(self._r_outer1, r * 1.30)
-        oval(self._r_mid,    r * 1.15)
-        oval(self._r_core,   r * 1.00)
-
-        # ── Degree marks ──────────────────────────────────────────────────────
-        dr = r * 1.68
-        for i, dm in enumerate(self._deg_marks):
-            a = (2*math.pi*i/12) - math.pi/2
-            c.coords(dm, cx + dr*math.cos(a), cy + dr*math.sin(a))
-            c.itemconfig(dm, text=f"{i*30:03d}°")
+        # Static rings coords unchanged unless resize fired — skip here
 
         # ── Rotating outer arcs ───────────────────────────────────────────────
         self._rot1 += 0.007 * spd
         ar = r * 1.44
+        rot1_deg = math.degrees(self._rot1)
+        step8 = 360 / 8
         for i, a in enumerate(self._arcs_outer):
-            base = math.degrees(self._rot1) + (360/8)*i
             c.coords(a, cx-ar, cy-ar, cx+ar, cy+ar)
-            c.itemconfig(a, start=base, extent=20, outline=mid)
+            c.itemconfig(a, start=rot1_deg + step8*i, outline=mid)
 
         # Inner counter-rotating
         self._rot2 -= 0.009 * spd
         ir = r * 1.14
+        rot2_deg = math.degrees(self._rot2)
+        step16 = 360 / 16
         for i, a in enumerate(self._arcs_inner):
-            base = math.degrees(self._rot2) + (360/16)*i
             c.coords(a, cx-ir, cy-ir, cx+ir, cy+ir)
-            c.itemconfig(a, start=base, extent=5, outline=BLUE_ARC)
+            c.itemconfig(a, start=rot2_deg + step16*i)
 
         # ── Radar sweep ───────────────────────────────────────────────────────
         self._sweep = (self._sweep + 0.04 * spd) % (2*math.pi)
         sweep_r = r * 1.29
-        sx = cx + sweep_r * math.cos(self._sweep)
-        sy = cy + sweep_r * math.sin(self._sweep)
-        c.coords(self._sweep_line, cx, cy, sx, sy)
+        sw_cos  = math.cos(self._sweep)
+        sw_sin  = math.sin(self._sweep)
+        c.coords(self._sweep_line, cx, cy, cx + sweep_r*sw_cos, cy + sweep_r*sw_sin)
         c.itemconfig(self._sweep_line, fill=bright if self._status != 'idle' else CYAN_DIM)
 
-        # Sweep fade trail (ghost arcs behind sweep)
-        trail_r = r * 1.28
+        # Sweep fade trail — only 8 arcs now (was 18)
+        trail_r   = r * 1.28
+        trail_deg = math.degrees(self._sweep)
+        n_fade    = len(self._sweep_fade)
         for i, fa in enumerate(self._sweep_fade):
-            offset = -(i+1) * 5
-            fade = max(0, 1.0 - i/len(self._sweep_fade))
-            fade_c = self._lerp_colour(mid, BG, 1.0 - fade * 0.6)
+            fade_c = self._lerp_colour(mid, BG, 1.0 - (1.0 - i/n_fade) * 0.55)
             c.coords(fa, cx-trail_r, cy-trail_r, cx+trail_r, cy+trail_r)
-            c.itemconfig(fa, start=math.degrees(self._sweep)+offset, extent=5, outline=fade_c)
+            c.itemconfig(fa, start=trail_deg - (i+1)*6, outline=fade_c)
 
         # ── Frequency bars ────────────────────────────────────────────────────
-        for i, bar in enumerate(self._freq_bars):
-            ang = (2*math.pi*i/NUM_BARS) - math.pi/2
-            target = amp * (0.3 + 0.7 * abs(math.sin(t*spd*0.65 + self._phases[i])))
-            self._bar_v[i] += (target - self._bar_v[i]) * 0.20
-            h = self._bar_v[i]
-            x1 = cx + r * math.cos(ang)
-            y1 = cy + r * math.sin(ang)
-            x2 = cx + (r + h) * math.cos(ang)
-            y2 = cy + (r + h) * math.sin(ang)
-            intensity = h / max(amp, 1)
+        inv_nb  = 2*math.pi / NUM_BARS
+        t_spd   = t * spd * 0.65
+        inv_amp = 1.0 / max(amp, 1)
+        for i in range(NUM_BARS):
+            ang    = inv_nb * i - math.pi/2
+            target = amp * (0.3 + 0.7 * abs(math.sin(t_spd + self._phases[i])))
+            self._bar_v[i] += (target - self._bar_v[i]) * 0.18
+            h   = self._bar_v[i]
+            cos_a = math.cos(ang)
+            sin_a = math.sin(ang)
+            x1  = cx + r * cos_a
+            y1  = cy + r * sin_a
+            intensity = h * inv_amp
             col = bright if intensity > 0.72 else mid if intensity > 0.38 else dim
-            c.coords(bar, x1,y1, x2,y2)
-            c.itemconfig(bar, fill=col)
+            c.coords(self._freq_bars[i], x1, y1, cx+(r+h)*cos_a, cy+(r+h)*sin_a)
+            c.itemconfig(self._freq_bars[i], fill=col)
 
         # ── Core layers ───────────────────────────────────────────────────────
         cmr = r * 0.70
-        oval(self._core_mask,  cmr,  fill=BG, outline=mid)
+        def oval(item, rad, **kw):
+            c.coords(item, cx-rad, cy-rad, cx+rad, cy+rad)
+            if kw: c.itemconfig(item, **kw)
+
+        oval(self._core_mask,  cmr,        fill=BG, outline=mid)
         oval(self._core_glow3, cmr * 0.93, fill=s['core_fill'])
         oval(self._core_glow2, cmr * 0.78, fill=self._shift_colour(s['core_fill'], 8))
         oval(self._core_glow1, cmr * 0.61, fill=self._shift_colour(s['core_fill'], 16))
 
-        # ── Inner hex ─────────────────────────────────────────────────────────
-        hex_r = cmr * 0.42
+        # Inner hex (rotates with rot1)
+        hex_r   = cmr * 0.42
+        hex_rot = self._rot1 * 0.3
+        hex_col = mid if self._status != 'idle' else CYAN_DIM
+        inv6    = 2*math.pi / 6
         for i, hl in enumerate(self._core_hex):
-            a1 = (2*math.pi*i/6)     + self._rot1 * 0.3
-            a2 = (2*math.pi*(i+1)/6) + self._rot1 * 0.3
+            a1 = inv6*i     + hex_rot
+            a2 = inv6*(i+1) + hex_rot
             c.coords(hl,
                      cx + hex_r*math.cos(a1), cy + hex_r*math.sin(a1),
                      cx + hex_r*math.cos(a2), cy + hex_r*math.sin(a2))
-            c.itemconfig(hl, fill=mid if self._status != 'idle' else CYAN_DIM)
+            c.itemconfig(hl, fill=hex_col)
 
-        # ── Inner triangle ────────────────────────────────────────────────────
-        tri_r = cmr * 0.28
+        # Inner triangle (counter-rotates with rot2)
+        tri_r   = cmr * 0.28
+        tri_rot = -self._rot2 * 0.4
+        tri_col = GOLD_DIM if self._status == 'idle' else GOLD
+        inv3    = 2*math.pi / 3
         for i, tl in enumerate(self._core_tri):
-            a1 = (2*math.pi*i/3)     - self._rot2 * 0.4
-            a2 = (2*math.pi*(i+1)/3) - self._rot2 * 0.4
+            a1 = inv3*i     + tri_rot
+            a2 = inv3*(i+1) + tri_rot
             c.coords(tl,
                      cx + tri_r*math.cos(a1), cy + tri_r*math.sin(a1),
                      cx + tri_r*math.cos(a2), cy + tri_r*math.sin(a2))
-            c.itemconfig(tl, fill=GOLD_DIM if self._status == 'idle' else GOLD)
+            c.itemconfig(tl, fill=tri_col)
 
-        # Core dot
+        # Core dot pulse
         pulse = 0.5 + 0.5 * math.sin(t * spd * 0.6)
         dot_r = cmr * (0.08 + 0.04 * pulse)
         c.coords(self._core_dot, cx-dot_r, cy-dot_r, cx+dot_r, cy+dot_r)
@@ -453,42 +491,36 @@ class AppWindow:
         oval(self._core_gold,  cmr * 0.52, outline=GOLD_DIM)
         oval(self._core_ring2, cmr * 0.60, outline=bright if self._status != 'idle' else CYAN_DIM)
 
-        # ── Center text ───────────────────────────────────────────────────────
-        fsize = max(14, int(r * 0.145))
-        c.coords(self._txt_aria,   cx, cy - r * 0.06)
-        c.itemconfig(self._txt_aria, font=('Consolas', fsize, 'bold'), fill=bright)
-        c.coords(self._txt_label,  cx, cy + r * 0.11)
-        c.itemconfig(self._txt_label, text=s['label'], fill=mid)
-        c.coords(self._txt_status, cx, cy + r * 0.22)
+        # ── Center text — only itemconfig, coords set by _update_static_items ──
+        c.itemconfig(self._txt_aria,   fill=bright)
+        c.itemconfig(self._txt_label,  text=s['label'],  fill=mid)
         c.itemconfig(self._txt_status, text=s['status'], fill=TEXT_DIM)
 
-        # ── Left panel ────────────────────────────────────────────────────────
-        self._draw_left_panel(cx, cy, r)
+        # ── Throttled updates (panels + streams) ──────────────────────────────
+        self._ticker += 1
+        tk_mod = self._ticker
 
-        # ── Right panel ───────────────────────────────────────────────────────
-        self._draw_right_panel(cx, cy, r)
+        # Panels: every 2 frames (15fps is enough for static-ish data)
+        if tk_mod % 2 == 0:
+            self._draw_left_panel(cx, cy, r)
+            self._draw_right_panel(cx, cy, r)
 
-        # ── Bottom dialogue ───────────────────────────────────────────────────
+        # Dialogue always (text changes are user-visible)
         self._draw_dialogue(t)
 
-        # ── Oscilloscope ──────────────────────────────────────────────────────
+        # Oscilloscope
         self._draw_osc(t, spd, mid, dim)
 
-        # ── Clock & telemetry ─────────────────────────────────────────────────
-        self._ticker += 1
-        if self._ticker % 55 == 0:
-            if PSUTIL_AVAILABLE:
-                self._cpu = psutil.cpu_percent(interval=None)
-                self._ram = psutil.virtual_memory().percent
-        if self._ticker % 12 == 0:
-            # Scroll data streams
+        # Data stream scroll: every 20 frames
+        if tk_mod % 20 == 0:
             self._stream_l.pop()
             self._stream_l.insert(0, f"{random.randint(0,0xFFFFFF):06X}")
             self._stream_r.pop()
             self._stream_r.insert(0, f"{random.randint(0,0xFFFF):04X}")
 
-        now = datetime.now().strftime("%H:%M:%S")
-        c.itemconfig(self._dp_clk, text=now)
+        # Clock: every 30 frames (once/sec at 30fps)
+        if tk_mod % 30 == 0:
+            c.itemconfig(self._dp_clk, text=datetime.now().strftime("%H:%M:%S"))
 
         self.root.after(1000 // FPS, self._animate)
 
@@ -525,6 +557,17 @@ class AppWindow:
                 c.create_polygon(*pts, outline=col_h, fill='', tags="hexgrid", width=1)
 
         c.tag_lower("hexgrid")
+
+    def _poll_hardware(self):
+        """Background thread: reads CPU/RAM every 2 seconds. Never blocks UI."""
+        import time as _time
+        while self._running:
+            try:
+                self._cpu = psutil.cpu_percent(interval=1.5)
+                self._ram = psutil.virtual_memory().percent
+            except Exception:
+                pass
+            _time.sleep(0.5)
 
     def _draw_left_panel(self, cx, cy, r):
         c = self._canvas

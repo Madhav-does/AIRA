@@ -243,6 +243,27 @@ def open_n8n() -> str:
     import actions.n8n_control as n8n
     return n8n.open_n8n()
 
+def post_to_linkedin(content: str) -> str:
+    """Publish a post to LinkedIn directly or via n8n automation."""
+    import actions.linkedin_control as lc
+    return lc.post_to_linkedin(content)
+
+def create_and_post_linkedin(topic: str) -> str:
+    """Create an engaging, high-impact LinkedIn post on a topic and publish or draft it."""
+    import actions.linkedin_control as lc
+    draft = lc.generate_linkedin_draft(topic)
+    return lc.post_to_linkedin(draft)
+
+def schedule_linkedin_post(topic_or_content: str, minutes_from_now: int = 60) -> str:
+    """Schedule a LinkedIn post to be automatically published in X minutes."""
+    import actions.social_poster as sp
+    return sp.schedule_linkedin_post(topic_or_content, minutes_from_now)
+
+def list_scheduled_posts() -> str:
+    """List all upcoming scheduled social media and LinkedIn posts."""
+    import actions.social_poster as sp
+    return sp.list_scheduled_posts()
+
 
 BUILTIN_TOOLS = [
     open_app, close_app,
@@ -251,6 +272,7 @@ BUILTIN_TOOLS = [
     send_email, search_maps, search_wikipedia, calculate_math, notify_desktop,
     send_whatsapp, minimize_all_windows, maximize_window, empty_recycle_bin,
     query_n8n, trigger_n8n_workflow, open_n8n,
+    post_to_linkedin, create_and_post_linkedin, schedule_linkedin_post, list_scheduled_posts,
     search_web, open_website,
     volume_up, volume_down, set_volume, mute_volume, unmute_volume,
     take_screenshot, open_folder,
@@ -274,6 +296,7 @@ def build_system_prompt(user_name: str = "Madhav") -> str:
 - Opening Apps: When {user_name} says "open Chrome", "open Spotify", "open VS Code", etc., call open_app(name=...).
 - Playing Music: When {user_name} says "play songs", "play Starboy", "play some lofi", call play_spotify(query=...) or play_song(query=...). If they specify YouTube, call play_youtube(query=...).
 - Sending Emails: When {user_name} says "send email to X about Y saying Z", call send_email(to=..., subject=..., body=...).
+- LinkedIn & Social Posting: When {user_name} says "post on LinkedIn about [topic]" or "create a LinkedIn post about [topic]", call create_and_post_linkedin(topic=...). If they give exact content to post on LinkedIn, call post_to_linkedin(content=...). When asked to schedule a post, call schedule_linkedin_post(topic_or_content=..., minutes_from_now=...). To see scheduled posts, call list_scheduled_posts().
 - n8n Automation: When {user_name} says "ask n8n [query]", "tell n8n to [task]", or asks n8n to do something, call query_n8n(prompt=...). When asked to trigger or run an n8n workflow, call trigger_n8n_workflow(workflow_name_or_path=...). When asked to open n8n or view the n8n assistant, call open_n8n().
 - Directions/Maps: When asked for locations, routes, or maps, call search_maps(query=...).
 - Factual Lookups: When asked about people, history, or science, call search_wikipedia(query=...).

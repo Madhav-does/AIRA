@@ -36,6 +36,8 @@ check("screenshot",     lambda: __import__("actions.screenshot", fromlist=["take
 check("email_control",   lambda: __import__("actions.email_control", fromlist=["compose_email"]))
 check("tools_extra",     lambda: __import__("actions.tools_extra", fromlist=["calculate_math"]))
 check("n8n_control",     lambda: __import__("actions.n8n_control", fromlist=["query_n8n"]))
+check("linkedin_control",lambda: __import__("actions.linkedin_control", fromlist=["post_to_linkedin"]))
+check("social_poster",   lambda: __import__("actions.social_poster", fromlist=["schedule_linkedin_post"]))
 
 # UI (skip rendering, just check imports)
 check("ui.app_window",  lambda: __import__("ui.app_window", fromlist=["AppWindow"]))

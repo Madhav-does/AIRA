@@ -228,6 +228,21 @@ def set_timer(seconds: int, label: str = "Timer") -> str:
     """Set a countdown timer in seconds. E.g., seconds=300 for 5 minutes."""
     return f"__SET_TIMER__:{seconds}:{label}"
 
+def query_n8n(prompt: str) -> str:
+    """Send a query, message, or task to Madhav's n8n cloud assistant (trafal.app.n8n.cloud) and return the response."""
+    import actions.n8n_control as n8n
+    return n8n.query_n8n(prompt)
+
+def trigger_n8n_workflow(workflow_name_or_path: str) -> str:
+    """Trigger an automation workflow or webhook on Madhav's n8n instance by name or webhook path."""
+    import actions.n8n_control as n8n
+    return n8n.trigger_n8n_workflow(workflow_name_or_path)
+
+def open_n8n() -> str:
+    """Open Madhav's n8n cloud assistant dashboard (trafal.app.n8n.cloud) in the browser."""
+    import actions.n8n_control as n8n
+    return n8n.open_n8n()
+
 
 BUILTIN_TOOLS = [
     open_app, close_app,
@@ -235,6 +250,7 @@ BUILTIN_TOOLS = [
     media_play_pause, media_next_track, media_prev_track, media_stop,
     send_email, search_maps, search_wikipedia, calculate_math, notify_desktop,
     send_whatsapp, minimize_all_windows, maximize_window, empty_recycle_bin,
+    query_n8n, trigger_n8n_workflow, open_n8n,
     search_web, open_website,
     volume_up, volume_down, set_volume, mute_volume, unmute_volume,
     take_screenshot, open_folder,
@@ -258,6 +274,7 @@ def build_system_prompt(user_name: str = "Madhav") -> str:
 - Opening Apps: When {user_name} says "open Chrome", "open Spotify", "open VS Code", etc., call open_app(name=...).
 - Playing Music: When {user_name} says "play songs", "play Starboy", "play some lofi", call play_spotify(query=...) or play_song(query=...). If they specify YouTube, call play_youtube(query=...).
 - Sending Emails: When {user_name} says "send email to X about Y saying Z", call send_email(to=..., subject=..., body=...).
+- n8n Automation: When {user_name} says "ask n8n [query]", "tell n8n to [task]", or asks n8n to do something, call query_n8n(prompt=...). When asked to trigger or run an n8n workflow, call trigger_n8n_workflow(workflow_name_or_path=...). When asked to open n8n or view the n8n assistant, call open_n8n().
 - Directions/Maps: When asked for locations, routes, or maps, call search_maps(query=...).
 - Factual Lookups: When asked about people, history, or science, call search_wikipedia(query=...).
 - Math: When asked to calculate or solve numbers, call calculate_math(expression=...).
